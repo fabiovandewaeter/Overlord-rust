@@ -1,7 +1,8 @@
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
 use bevy::prelude::*;
-use bevy::time::common_conditions::on_timer;
-use std::time::Duration;
+// use bevy_simple_subsecond_system::prelude::*;
+
+const TARGET_UPS: f64 = 30.0;
 
 #[derive(Resource)]
 struct UpsCounter {
@@ -11,35 +12,87 @@ struct UpsCounter {
 }
 
 fn main() {
-    let target_ups: f32 = 30.0;
-
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Overlord".to_string(),
-                present_mode: bevy::window::PresentMode::AutoVsync, // pas de vsync -> FPS max
+                present_mode: bevy::window::PresentMode::AutoVsync,
                 ..default()
             }),
             ..default()
         }))
-        // Plugin pour mesurer FPS
+        // .add_plugins(SimpleSubsecondPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        // UPS tracker
+        .add_systems(Startup, setup)
         .insert_resource(UpsCounter {
             ticks: 0,
             last_second: 0.0,
             ups: 0,
         })
-        // Logique à 30 UPS
-        .add_systems(
-            Update,
-            update_logic.run_if(on_timer(Duration::from_secs_f32(1.0 / target_ups))),
-        )
-        // Rendu à chaque frame
-        .add_systems(Update, update_render)
-        // Affichage FPS / UPS toutes les secondes
-        .add_systems(Update, display_fps_ups)
+        .insert_resource(Time::<Fixed>::from_seconds(1.0 / TARGET_UPS))
+        .add_systems(Update, (handle_inputs, update_render, display_fps_ups))
+        .add_systems(FixedUpdate, update_logic)
         .run();
+}
+
+fn setup(
+    mut commands: Commands,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<ColorMaterial>>,
+    window: Single<&Window>,
+) {
+    use bevy::color::palettes::css::GREEN;
+
+    commands.spawn((Camera2d, Camera { ..default() }));
+    commands.spawn((
+        Mesh2d(meshes.add(Rectangle::new(40.0, 20.0))),
+        MeshMaterial2d(materials.add(Color::from(GREEN))),
+    ));
+}
+
+fn handle_inputs(
+    mut camera_query: Query<(&mut Camera, &mut Transform, &mut Projection)>,
+    //window: Query<&Window>,
+    input: Res<ButtonInput<KeyCode>>,
+    time: Res<Time>,
+) {
+    let Ok((mut _camera, mut transform, mut projection)) = camera_query.single_mut() else {
+        return;
+    };
+
+    // Camera movement controls
+    let mut direction = Vec3::ZERO;
+
+    if input.pressed(KeyCode::KeyW) {
+        direction.y += 1.0;
+    }
+    if input.pressed(KeyCode::KeyS) {
+        direction.y -= 1.0;
+    }
+    if input.pressed(KeyCode::KeyA) {
+        direction.x -= 1.0;
+    }
+    if input.pressed(KeyCode::KeyD) {
+        direction.x += 1.0;
+    }
+    // Normaliser le vecteur pour avoir une vitesse constante
+    if direction != Vec3::ZERO {
+        direction = direction.normalize();
+        let speed = 600.0 * time.delta_secs();
+        transform.translation += direction * speed;
+    }
+
+    // Camera zoom controls
+    if let Projection::Orthographic(projection2d) = &mut *projection {
+        use bevy::math::ops::powf;
+        if input.pressed(KeyCode::Comma) {
+            projection2d.scale *= powf(4.0f32, time.delta_secs());
+        }
+
+        if input.pressed(KeyCode::Period) {
+            projection2d.scale *= powf(0.25f32, time.delta_secs());
+        }
+    }
 }
 
 fn update_logic(mut counter: ResMut<UpsCounter>, time: Res<Time>) {
