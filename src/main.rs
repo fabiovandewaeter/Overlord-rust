@@ -1,8 +1,10 @@
 use bevy::diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin};
+use bevy::input::mouse::{MouseScrollUnit, MouseWheel};
 use bevy::prelude::*;
-// use bevy_simple_subsecond_system::prelude::*;
 
 const TARGET_UPS: f64 = 30.0;
+const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
+const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
 
 #[derive(Resource)]
 struct UpsCounter {
@@ -21,7 +23,6 @@ fn main() {
             }),
             ..default()
         }))
-        // .add_plugins(SimpleSubsecondPlugin::default())
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_systems(Startup, setup)
         .insert_resource(UpsCounter {
@@ -52,8 +53,8 @@ fn setup(
 
 fn handle_inputs(
     mut camera_query: Query<(&mut Camera, &mut Transform, &mut Projection)>,
-    //window: Query<&Window>,
     input: Res<ButtonInput<KeyCode>>,
+    mut input_mouse_wheel: EventReader<MouseWheel>,
     time: Res<Time>,
 ) {
     let Ok((mut _camera, mut transform, mut projection)) = camera_query.single_mut() else {
@@ -75,7 +76,7 @@ fn handle_inputs(
     if input.pressed(KeyCode::KeyD) {
         direction.x += 1.0;
     }
-    // Normaliser le vecteur pour avoir une vitesse constante
+    // normalizes to have constant diagonal speed
     if direction != Vec3::ZERO {
         direction = direction.normalize();
         let speed = 600.0 * time.delta_secs();
@@ -84,13 +85,32 @@ fn handle_inputs(
 
     // Camera zoom controls
     if let Projection::Orthographic(projection2d) = &mut *projection {
-        use bevy::math::ops::powf;
-        if input.pressed(KeyCode::Comma) {
-            projection2d.scale *= powf(4.0f32, time.delta_secs());
-        }
-
-        if input.pressed(KeyCode::Period) {
-            projection2d.scale *= powf(0.25f32, time.delta_secs());
+        for mouse_wheel_event in input_mouse_wheel.read() {
+            use bevy::math::ops::powf;
+            match mouse_wheel_event.unit {
+                MouseScrollUnit::Line => {
+                    println!(
+                        "Scroll (line units): vertical: {}, horizontal: {}",
+                        mouse_wheel_event.y, mouse_wheel_event.x
+                    );
+                    if mouse_wheel_event.y > 0.0 {
+                        projection2d.scale *= powf(ZOOM_IN_SPEED, time.delta_secs());
+                    } else if mouse_wheel_event.y < 0.0 {
+                        projection2d.scale *= powf(ZOOM_OUT_SPEED, time.delta_secs());
+                    }
+                }
+                MouseScrollUnit::Pixel => {
+                    println!(
+                        "Scroll (pixel units): vertical: {}, horizontal: {}",
+                        mouse_wheel_event.y, mouse_wheel_event.x
+                    );
+                    if mouse_wheel_event.y > 0.0 {
+                        projection2d.scale *= powf(ZOOM_IN_SPEED, time.delta_secs());
+                    } else if mouse_wheel_event.y < 0.0 {
+                        projection2d.scale *= powf(ZOOM_OUT_SPEED, time.delta_secs());
+                    }
+                }
+            }
         }
     }
 }
