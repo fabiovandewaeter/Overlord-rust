@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::mouse::{MouseScrollUnit, MouseWheel},
@@ -6,9 +8,13 @@ use bevy::{
 use bevy_ecs_tilemap::{map::*, tiles::*};
 use rand::Rng;
 
-use crate::map::{ChunkManager, MapPlugin, TILE_SIZE, Wall, camera_pos_to_chunk_pos, spawn_chunk};
+use crate::{
+    map::{ChunkManager, MapPlugin, TILE_SIZE, Wall, camera_pos_to_chunk_pos, spawn_chunk},
+    pathfinding::{PathfindingAgent, PathfindingPlugin},
+};
 
 mod map;
+mod pathfinding;
 
 const TARGET_UPS: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
@@ -43,7 +49,7 @@ fn setup(
 
     let player_texture_handle = asset_server.load("default.png");
     let mut rng = rand::rng();
-    for i in 0..10 {
+    for _i in 0..10 {
         let random_number: i32 = rng.random_range(0..500); // un entier de 0 à 9
 
         commands.spawn((
@@ -52,6 +58,13 @@ fn setup(
                 // movement_speed: 500.0,
                 movement_speed: random_number as f32,
                 rotation_speed: f32::to_radians(360.0),
+            },
+            PathfindingAgent {
+                target: None,
+                path: VecDeque::new(),
+                current_path_index: 0,
+                speed: random_number as f32,
+                path_tolerance: TILE_SIZE.x * 0.1, // 10% de la taille d'une tile
             },
             CircularCollider {
                 radius: TILE_SIZE.x * 0.4,
@@ -335,6 +348,7 @@ fn main() {
         }))
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(MapPlugin)
+        .add_plugins(PathfindingPlugin)
         .insert_resource(UpsCounter {
             ticks: 0,
             last_second: 0.0,
@@ -347,7 +361,7 @@ fn main() {
             FixedUpdate,
             (
                 update_logic,
-                move_and_collide_units,
+                // move_and_collide_units,
                 spawn_chunks_around_units,
             ),
         )

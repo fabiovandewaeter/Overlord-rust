@@ -1,4 +1,4 @@
-use bevy::{platform::collections::HashSet, prelude::*, render::render_resource::TextureId};
+use bevy::{platform::collections::HashSet, prelude::*};
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 
@@ -36,7 +36,7 @@ pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_po
                 ..Default::default()
             });
 
-            let is_wall = rng.gen_bool(0.2);
+            let is_wall = rng.random_bool(0.2);
             if is_wall {
                 tile_commands.insert(Wall);
                 tile_commands.insert(TileTextureIndex(1));
