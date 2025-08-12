@@ -1,7 +1,8 @@
-use bevy::{platform::collections::HashSet, prelude::*};
+use bevy::{platform::collections::HashSet, prelude::*, render::render_resource::TextureId};
 use bevy_ecs_tilemap::prelude::*;
+use rand::Rng;
 
-const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 16.0, y: 16.0 };
+const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
 // For this example, don't choose too large a chunk size.
 const CHUNK_SIZE: UVec2 = UVec2 { x: 4, y: 4 };
 // Render chunk sizes are set to 4 render chunks per user specified chunk.
@@ -12,20 +13,36 @@ const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
 
 pub struct MapPlugin;
 
+#[derive(Component)]
+pub struct Wall;
+
 pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_pos: IVec2) {
     let tilemap_entity = commands.spawn_empty().id();
     let mut tile_storage = TileStorage::empty(CHUNK_SIZE.into());
+
+    let mut rng = rand::rng();
+
     // Spawn the elements of the tilemap.
     for x in 0..CHUNK_SIZE.x {
         for y in 0..CHUNK_SIZE.y {
             let tile_pos = TilePos { x, y };
-            let tile_entity = commands
-                .spawn(TileBundle {
-                    position: tile_pos,
-                    tilemap_id: TilemapId(tilemap_entity),
-                    ..Default::default()
-                })
-                .id();
+
+            // randomly choose if it's a wall or not
+
+            let mut tile_commands = commands.spawn(TileBundle {
+                position: tile_pos,
+                tilemap_id: TilemapId(tilemap_entity),
+                texture_index: TileTextureIndex(0),
+                ..Default::default()
+            });
+
+            let is_wall = rng.gen_bool(0.2);
+            if is_wall {
+                tile_commands.insert(Wall);
+                tile_commands.insert(TileTextureIndex(1));
+            }
+
+            let tile_entity = tile_commands.id();
             commands.entity(tilemap_entity).add_child(tile_entity);
             tile_storage.set(&tile_pos, tile_entity);
         }
@@ -36,12 +53,18 @@ pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_po
         chunk_pos.y as f32 * CHUNK_SIZE.y as f32 * TILE_SIZE.y,
         -1.0,
     ));
-    let texture_handle: Handle<Image> = asset_server.load("tiles/default.png");
+
+    let image_handles = vec![
+        asset_server.load("tiles/grass.png"),
+        asset_server.load("tiles/stone.png"),
+    ];
+
     commands.entity(tilemap_entity).insert(TilemapBundle {
         grid_size: TILE_SIZE.into(),
         size: CHUNK_SIZE.into(),
         storage: tile_storage,
-        texture: TilemapTexture::Single(texture_handle),
+        // texture: TilemapTexture::Single(texture_handle),
+        texture: TilemapTexture::Vector(image_handles),
         tile_size: TILE_SIZE,
         transform,
         render_settings: TilemapRenderSettings {
@@ -78,26 +101,6 @@ fn spawn_chunks_around_camera(
     }
 }
 
-// fn despawn_outofrange_chunks(
-//     mut commands: Commands,
-//     camera_query: Query<&Transform, With<Camera>>,
-//     chunks_query: Query<(Entity, &Transform)>,
-//     mut chunk_manager: ResMut<ChunkManager>,
-// ) {
-//     for camera_transform in camera_query.iter() {
-//         for (entity, chunk_transform) in chunks_query.iter() {
-//             let chunk_pos = chunk_transform.translation.xy();
-//             let distance = camera_transform.translation.xy().distance(chunk_pos);
-//             if distance > 320.0 {
-//                 let x = (chunk_pos.x / (CHUNK_SIZE.x as f32 * TILE_SIZE.x)).floor() as i32;
-//                 let y = (chunk_pos.y / (CHUNK_SIZE.y as f32 * TILE_SIZE.y)).floor() as i32;
-//                 chunk_manager.spawned_chunks.remove(&IVec2::new(x, y));
-//                 commands.entity(entity).despawn();
-//             }
-//         }
-//     }
-// }
-
 #[derive(Default, Debug, Resource)]
 pub struct ChunkManager {
     pub spawned_chunks: HashSet<IVec2>,
@@ -108,6 +111,5 @@ impl Plugin for MapPlugin {
         app.add_plugins(TilemapPlugin)
             .insert_resource(ChunkManager::default())
             .add_systems(Update, spawn_chunks_around_camera);
-        // .add_systems(Update, despawn_outofrange_chunks);
     }
 }

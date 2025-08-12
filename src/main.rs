@@ -180,7 +180,6 @@ fn display_fps_ups(
 fn spawn_chunks_around_units(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    camera_query: Query<&Transform, With<Camera>>,
     units_query: Query<&Transform, With<Unit>>,
     mut chunk_manager: ResMut<ChunkManager>,
 ) {
