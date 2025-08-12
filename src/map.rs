@@ -2,11 +2,11 @@ use bevy::{platform::collections::HashSet, prelude::*, render::render_resource::
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 
-const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
+pub const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
 // For this example, don't choose too large a chunk size.
-const CHUNK_SIZE: UVec2 = UVec2 { x: 4, y: 4 };
+pub const CHUNK_SIZE: UVec2 = UVec2 { x: 4, y: 4 };
 // Render chunk sizes are set to 4 render chunks per user specified chunk.
-const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
+pub const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
     x: CHUNK_SIZE.x * 2,
     y: CHUNK_SIZE.y * 2,
 };

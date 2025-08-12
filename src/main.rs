@@ -3,9 +3,10 @@ use bevy::{
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
 };
+use bevy_ecs_tilemap::{map::*, tiles::*};
 use rand::Rng;
 
-use crate::map::{ChunkManager, MapPlugin, camera_pos_to_chunk_pos, spawn_chunk};
+use crate::map::{ChunkManager, MapPlugin, TILE_SIZE, Wall, camera_pos_to_chunk_pos, spawn_chunk};
 
 mod map;
 
@@ -24,6 +25,11 @@ struct UpsCounter {
 struct Unit {
     movement_speed: f32,
     rotation_speed: f32,
+}
+
+#[derive(Component)]
+struct CircularCollider {
+    pub radius: f32,
 }
 
 fn setup(
@@ -45,6 +51,9 @@ fn setup(
                 // movement_speed: 500.0,
                 movement_speed: random_number as f32,
                 rotation_speed: f32::to_radians(360.0),
+            },
+            CircularCollider {
+                radius: TILE_SIZE.x * 0.4,
             },
         ));
     }
@@ -177,6 +186,119 @@ fn display_fps_ups(
     }
 }
 
+// Fonction utilitaire pour calculer la collision cercle-rectangle
+fn circle_rect_collision(
+    circle_center: Vec2,
+    circle_radius: f32,
+    rect_center: Vec2,
+    rect_size: Vec2,
+) -> Option<Vec2> {
+    // Calculer le point le plus proche du rectangle par rapport au centre du cercle
+    let closest_x = circle_center.x.clamp(
+        rect_center.x - rect_size.x / 2.0,
+        rect_center.x + rect_size.x / 2.0,
+    );
+    let closest_y = circle_center.y.clamp(
+        rect_center.y - rect_size.y / 2.0,
+        rect_center.y + rect_size.y / 2.0,
+    );
+
+    let closest_point = Vec2::new(closest_x, closest_y);
+    let distance_vec = circle_center - closest_point;
+    let distance = distance_vec.length();
+
+    if distance < circle_radius {
+        // Il y a collision, retourner le vecteur de résolution
+        if distance > 0.0 {
+            let penetration_depth = circle_radius - distance;
+            Some(distance_vec.normalize() * penetration_depth)
+        } else {
+            // Le centre du cercle est exactement sur le point le plus proche
+            // Choisir une direction par défaut (vers le haut)
+            Some(Vec2::Y * circle_radius)
+        }
+    } else {
+        None
+    }
+}
+
+/// Déplace les unités et gère les collisions.
+fn move_and_collide_units(
+    mut unit_query: Query<(Entity, &Unit, &mut Transform, &CircularCollider)>,
+    wall_query: Query<(&TilePos, &TilemapId), (With<Wall>, Without<Unit>)>,
+    tilemap_q: Query<
+        (&TilemapGridSize, &TilemapSize, &Transform),
+        (With<TileStorage>, Without<Unit>),
+    >,
+    time: Res<Time>,
+) {
+    let delta_time = time.delta_secs();
+
+    // 1) MOUVEMENT DES UNITÉS
+    for (_entity, unit, mut transform, _collider) in unit_query.iter_mut() {
+        // Mouvement simple : les unités tournent et avancent
+        transform.rotate_z(unit.rotation_speed * delta_time * 0.1);
+        let movement_direction = transform.up();
+        let movement_amount = unit.movement_speed * delta_time;
+
+        // Position proposée après mouvement
+        let proposed_position = transform.translation + movement_direction * movement_amount;
+
+        // 2) GESTION DES COLLISIONS UNIT-MUR
+        let mut final_position = proposed_position;
+        let unit_pos_2d = Vec2::new(proposed_position.x, proposed_position.y);
+
+        // Vérifier les collisions avec tous les murs
+        for (wall_tile_pos, wall_tilemap_id) in wall_query.iter() {
+            // Trouver la tilemap correspondante
+            if let Ok((grid_size, tilemap_size, tilemap_transform)) =
+                tilemap_q.get(wall_tilemap_id.0)
+            {
+                // Calculer la position monde du mur
+                let tile_world_pos = Vec2::new(
+                    tilemap_transform.translation.x + wall_tile_pos.x as f32 * grid_size.x,
+                    tilemap_transform.translation.y + wall_tile_pos.y as f32 * grid_size.y,
+                );
+
+                let tile_size = Vec2::new(grid_size.x, grid_size.y);
+
+                // Vérifier la collision cercle-rectangle
+                if let Some(resolution_vector) =
+                    circle_rect_collision(unit_pos_2d, _collider.radius, tile_world_pos, tile_size)
+                {
+                    // Il y a collision, ajuster la position
+                    final_position.x += resolution_vector.x;
+                    final_position.y += resolution_vector.y;
+                }
+            }
+        }
+
+        // Appliquer la position finale
+        transform.translation = final_position;
+    }
+
+    // 3) GESTION DES COLLISIONS UNIT-UNIT
+    let mut combinations = unit_query.iter_combinations_mut();
+    while let Some([mut unit_a, mut unit_b]) = combinations.fetch_next() {
+        let (_entity_a, _unit_a, transform_a, collider_a) = &unit_a;
+        let (_entity_b, _unit_b, transform_b, collider_b) = &unit_b;
+
+        let distance = transform_a.translation.distance(transform_b.translation);
+        let min_distance = collider_a.radius + collider_b.radius;
+
+        if distance < min_distance {
+            let overlap = min_distance - distance;
+            let direction = (transform_a.translation - transform_b.translation).normalize_or_zero();
+
+            let (_, _, mut transform_a_mut, _) = unit_a;
+            transform_a_mut.translation += direction * overlap / 2.0;
+
+            let (_, _, mut transform_b_mut, _) = unit_b;
+            transform_b_mut.translation -= direction * overlap / 2.0;
+        }
+    }
+}
+
 fn spawn_chunks_around_units(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -217,6 +339,13 @@ fn main() {
         .insert_resource(Time::<Fixed>::from_hz(TARGET_UPS))
         .add_systems(Startup, setup)
         .add_systems(Update, (handle_camera_inputs, display_fps_ups))
-        .add_systems(FixedUpdate, (update_logic, spawn_chunks_around_units))
+        .add_systems(
+            FixedUpdate,
+            (
+                update_logic,
+                move_and_collide_units,
+                spawn_chunks_around_units,
+            ),
+        )
         .run();
 }
