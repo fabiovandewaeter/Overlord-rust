@@ -13,6 +13,7 @@ mod map;
 const TARGET_UPS: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
+const CAMERA_SPEED: f32 = 1200.0;
 
 #[derive(Resource)]
 struct UpsCounter {
@@ -43,7 +44,7 @@ fn setup(
     let player_texture_handle = asset_server.load("default.png");
     let mut rng = rand::rng();
     for i in 0..10 {
-        let random_number: i32 = rng.gen_range(0..500); // un entier de 0 à 9
+        let random_number: i32 = rng.random_range(0..500); // un entier de 0 à 9
 
         commands.spawn((
             Sprite::from_image(player_texture_handle.clone()),
@@ -90,10 +91,18 @@ fn handle_camera_inputs(
     if input.pressed(KeyCode::KeyD) {
         direction.x += 1.0;
     }
+
+    // Récupérer le niveau de zoom actuel
+    let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
+        projection2d.scale
+    } else {
+        1.0 // Valeur par défaut si ce n'est pas une projection orthographique
+    };
+
     // normalizes to have constant diagonal speed
     if direction != Vec3::ZERO {
         direction = direction.normalize();
-        let speed = 600.0 * time.delta_secs();
+        let speed = CAMERA_SPEED * zoom_scale.powf(0.7) * time.delta_secs();
         transform.translation += direction * speed;
     }
 
@@ -226,10 +235,7 @@ fn circle_rect_collision(
 fn move_and_collide_units(
     mut unit_query: Query<(Entity, &Unit, &mut Transform, &CircularCollider)>,
     wall_query: Query<(&TilePos, &TilemapId), (With<Wall>, Without<Unit>)>,
-    tilemap_q: Query<
-        (&TilemapGridSize, &TilemapSize, &Transform),
-        (With<TileStorage>, Without<Unit>),
-    >,
+    tilemap_q: Query<(&TilemapGridSize, &Transform), (With<TileStorage>, Without<Unit>)>,
     time: Res<Time>,
 ) {
     let delta_time = time.delta_secs();
@@ -251,9 +257,7 @@ fn move_and_collide_units(
         // Vérifier les collisions avec tous les murs
         for (wall_tile_pos, wall_tilemap_id) in wall_query.iter() {
             // Trouver la tilemap correspondante
-            if let Ok((grid_size, tilemap_size, tilemap_transform)) =
-                tilemap_q.get(wall_tilemap_id.0)
-            {
+            if let Ok((grid_size, tilemap_transform)) = tilemap_q.get(wall_tilemap_id.0) {
                 // Calculer la position monde du mur
                 let tile_world_pos = Vec2::new(
                     tilemap_transform.translation.x + wall_tile_pos.x as f32 * grid_size.x,
@@ -279,7 +283,7 @@ fn move_and_collide_units(
 
     // 3) GESTION DES COLLISIONS UNIT-UNIT
     let mut combinations = unit_query.iter_combinations_mut();
-    while let Some([mut unit_a, mut unit_b]) = combinations.fetch_next() {
+    while let Some([unit_a, unit_b]) = combinations.fetch_next() {
         let (_entity_a, _unit_a, transform_a, collider_a) = &unit_a;
         let (_entity_b, _unit_b, transform_b, collider_b) = &unit_b;
 
