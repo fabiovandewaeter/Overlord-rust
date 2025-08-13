@@ -79,6 +79,16 @@ pub fn spawn_chunk(
     tilemap_entity
 }
 
+// Conversion coordonnées logiques -> monde
+pub fn tile_coords_to_world(tile_coords: Vec2) -> Vec2 {
+    Vec2::new(tile_coords.x * TILE_SIZE.x, tile_coords.y * TILE_SIZE.y)
+}
+
+// Conversion monde -> coordonnées logiques
+pub fn world_coords_to_tile(world_coords: Vec2) -> Vec2 {
+    Vec2::new(world_coords.x / TILE_SIZE.x, world_coords.y / TILE_SIZE.y)
+}
+
 /// Convertit une position monde (pixels) en position de chunk.
 pub fn world_pos_to_chunk_pos(world_pos: &Vec2) -> IVec2 {
     let chunk_size_pixels = CHUNK_SIZE.as_vec2() * Vec2::new(TILE_SIZE.x, TILE_SIZE.y);

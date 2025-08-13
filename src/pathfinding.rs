@@ -1,6 +1,8 @@
-use crate::map::{self, CHUNK_SIZE, ChunkManager, LAYER_LEVEL, TILE_SIZE, Wall};
+use crate::map::{
+    self, CHUNK_SIZE, ChunkManager, LAYER_LEVEL, TILE_SIZE, Wall, world_coords_to_tile,
+};
 use crate::pathfinding;
-use bevy::prelude::*;
+use bevy::{prelude::*, transform};
 use bevy_ecs_tilemap::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -117,6 +119,35 @@ fn is_diagonal(from: GridPos, to: GridPos) -> bool {
     (from.x - to.x).abs() == 1 && (from.y - to.y).abs() == 1
 }
 
+fn heuristic(a: GridPos, b: GridPos) -> f32 {
+    let dx = (a.x - b.x) as f32;
+    let dy = (a.y - b.y) as f32;
+    (dx * dx + dy * dy).sqrt()
+}
+
+fn get_neighbors(pos: GridPos) -> impl Iterator<Item = GridPos> {
+    (-1..=1)
+        .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
+        .filter(|&(x, y)| x != 0 || y != 0)
+        .map(move |(dx, dy)| GridPos {
+            x: pos.x + dx,
+            y: pos.y + dy,
+        })
+}
+
+fn reconstruct_path(all_nodes: HashMap<GridPos, PathNode>, mut current: GridPos) -> VecDeque<Vec2> {
+    let mut path = VecDeque::new();
+    while let Some(node) = all_nodes.get(&current) {
+        path.push_front(grid_to_tile_pos(node.pos));
+        if let Some(parent) = node.parent {
+            current = parent;
+        } else {
+            break;
+        }
+    }
+    path
+}
+
 fn find_path(
     start_pos: Vec2,
     end_pos: Vec2,
@@ -203,50 +234,23 @@ fn find_path(
     None
 }
 
-fn heuristic(a: GridPos, b: GridPos) -> f32 {
-    let dx = (a.x - b.x) as f32;
-    let dy = (a.y - b.y) as f32;
-    (dx * dx + dy * dy).sqrt()
-}
-
-fn get_neighbors(pos: GridPos) -> impl Iterator<Item = GridPos> {
-    (-1..=1)
-        .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
-        .filter(|&(x, y)| x != 0 || y != 0)
-        .map(move |(dx, dy)| GridPos {
-            x: pos.x + dx,
-            y: pos.y + dy,
-        })
-}
-
-fn reconstruct_path(all_nodes: HashMap<GridPos, PathNode>, mut current: GridPos) -> VecDeque<Vec2> {
-    let mut path = VecDeque::new();
-    while let Some(node) = all_nodes.get(&current) {
-        path.push_front(grid_to_tile_pos(node.pos));
-        if let Some(parent) = node.parent {
-            current = parent;
-        } else {
-            break;
-        }
-    }
-    path
-}
-
 // ========== SYSTÈMES BEVY ==========
 
 /// Système qui calcule le chemin pour les agents.
 pub fn pathfinding_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &super::TilePosition)>,
+    mut agents_query: Query<(&mut PathfindingAgent, &Transform)>,
     chunk_manager: Res<ChunkManager>,
     tile_storage_query: Query<&TileStorage>,
     wall_query: Query<(), With<Wall>>,
 ) {
-    for (mut agent, tile_pos) in agents_query.iter_mut() {
+    for (mut agent, transform) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
+            // Convert transform -> tile coords once
+            let start_tile = world_coords_to_tile(transform.translation.xy());
             // Recalculer le chemin si la cible a changé (chemin vide)
             if agent.path.is_empty() {
                 if let Some(new_path) = find_path(
-                    tile_pos.0,
+                    start_tile,
                     target,
                     &chunk_manager,
                     &tile_storage_query,
@@ -264,17 +268,13 @@ pub fn pathfinding_system(
 
 /// Système qui déplace les agents le long de leur chemin.
 pub fn movement_system(
-    mut agents_query: Query<(
-        &mut PathfindingAgent,
-        &mut super::TilePosition,
-        &mut Transform,
-    )>,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut Transform)>,
     time: Res<Time>,
 ) {
-    for (mut agent, mut tile_pos, mut transform) in agents_query.iter_mut() {
+    for (mut agent, mut transform) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
-            let current_pos = tile_pos.0;
-            let distance = current_pos.distance(next_waypoint);
+            let current_tile_pos = world_coords_to_tile(transform.translation.xy());
+            let distance = current_tile_pos.distance(next_waypoint);
 
             if distance <= agent.path_tolerance {
                 // Waypoint atteint, on le retire et passe au suivant
@@ -284,10 +284,14 @@ pub fn movement_system(
                 }
             } else {
                 // Se déplacer vers le waypoint
-                let direction = (next_waypoint - current_pos).normalize_or_zero();
+                let direction = (next_waypoint - current_tile_pos).normalize_or_zero();
 
-                // CHANGEMENT: Le mouvement se fait en unités de tuiles
-                tile_pos.0 += direction * agent.speed * time.delta_secs();
+                // move in pixels: convert tile movement to pixels
+                let movement_tiles = direction * agent.speed * time.delta_secs();
+                let movement_pixels =
+                    movement_tiles * Vec2::new(map::TILE_SIZE.x, map::TILE_SIZE.y);
+                transform.translation.x += movement_pixels.x;
+                transform.translation.y += movement_pixels.y;
 
                 // Rotation du sprite
                 if direction != Vec2::ZERO {
@@ -321,9 +325,6 @@ fn mouse_target_system(
                     world_pos.x / map::TILE_SIZE.x,
                     world_pos.y / map::TILE_SIZE.y,
                 );
-
-                println!("{:?}", tile_pos);
-
                 for mut agent in agents_query.iter_mut() {
                     agent.target = Some(tile_pos);
                     agent.path.clear(); // Force le recalcul du chemin
