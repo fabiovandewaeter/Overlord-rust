@@ -1,8 +1,6 @@
-use crate::map::{
-    self, CHUNK_SIZE, ChunkManager, LAYER_LEVEL, TILE_SIZE, Wall, world_coords_to_tile,
-};
+use crate::map::{self, CHUNK_SIZE, ChunkManager, Wall, world_coords_to_tile};
 use crate::pathfinding;
-use bevy::{prelude::*, transform};
+use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
@@ -135,7 +133,10 @@ fn get_neighbors(pos: GridPos) -> impl Iterator<Item = GridPos> {
         })
 }
 
-fn reconstruct_path(all_nodes: HashMap<GridPos, PathNode>, mut current: GridPos) -> VecDeque<Vec2> {
+fn reconstruct_path(
+    all_nodes: &HashMap<GridPos, PathNode>,
+    mut current: GridPos,
+) -> VecDeque<Vec2> {
     let mut path = VecDeque::new();
     while let Some(node) = all_nodes.get(&current) {
         path.push_front(grid_to_tile_pos(node.pos));
@@ -162,8 +163,30 @@ fn find_path(
         return None;
     }
 
+    // -------------------------
+    // Configuration de la limite
+    // -------------------------
+    // Ajuste ces constantes selon tes besoins.
+    const BASE_LIMIT: usize = 500; // nombre d'expansions minimal
+    const PER_TILE_LIMIT: usize = 40; // coût par tuile de distance (augmente la limite si distance élevée)
+    const MAX_LIMIT: usize = 20_000; // plafond absolu pour éviter explosion
+
+    let dist_tiles = heuristic(start_grid, end_grid); // distance en tuiles (float)
+    let per_tile_extra = ((dist_tiles).round() as isize).max(0) as usize;
+    let mut max_expansions = BASE_LIMIT + per_tile_extra * PER_TILE_LIMIT;
+    if max_expansions > MAX_LIMIT {
+        max_expansions = MAX_LIMIT;
+    }
+
+    // Si true -> retourner un chemin partiel vers le meilleur noeud exploré quand on atteint la limite.
+    // Si false -> retourner None (annuler la cible).
+    let return_partial_on_limit = true;
+
+    // -------------------------
+    // A* habituel
+    // -------------------------
     let mut open_set = BinaryHeap::new();
-    let mut all_nodes = HashMap::new();
+    let mut all_nodes: HashMap<GridPos, PathNode> = HashMap::new();
 
     let start_node = PathNode {
         pos: start_grid,
@@ -174,15 +197,33 @@ fn find_path(
     open_set.push(start_node.clone());
     all_nodes.insert(start_grid, start_node);
 
+    let mut expansions: usize = 0;
+
     while let Some(current_node) = open_set.pop() {
+        expansions += 1;
+        // Si trop d'expansions, on coupe
+        if expansions > max_expansions {
+            if return_partial_on_limit {
+                // Choisir le noeud exploré ayant le plus petit h_cost (le plus proche heuristiquement de la cible)
+                if let Some(best) = all_nodes
+                    .values()
+                    .min_by(|a, b| a.h_cost.partial_cmp(&b.h_cost).unwrap_or(Ordering::Equal))
+                {
+                    return Some(reconstruct_path(&all_nodes, best.pos));
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+
         if current_node.pos == end_grid {
-            return Some(reconstruct_path(all_nodes, end_grid));
+            return Some(reconstruct_path(&all_nodes, end_grid));
         }
 
         for neighbor_pos in get_neighbors(current_node.pos) {
-            // Si le mouvement est en diagonale
             if is_diagonal(current_node.pos, neighbor_pos) {
-                // On vérifie les deux cases adjacentes qui forment le "coin"
                 let corner_1 = GridPos {
                     x: current_node.pos.x,
                     y: neighbor_pos.y,
@@ -192,11 +233,10 @@ fn find_path(
                     y: current_node.pos.y,
                 };
 
-                // Si l'une des deux cases du coin est un mur, on ignore ce voisin diagonal
                 if !is_tile_passable(corner_1, chunk_manager, tile_storage_query, wall_query)
                     || !is_tile_passable(corner_2, chunk_manager, tile_storage_query, wall_query)
                 {
-                    continue; // Passe au voisin suivant
+                    continue;
                 }
             }
 
@@ -215,8 +255,6 @@ fn find_path(
                 if new_g_cost < existing_node.g_cost {
                     existing_node.g_cost = new_g_cost;
                     existing_node.parent = Some(current_node.pos);
-                    // A* a besoin de pouvoir mettre à jour la priorité, BinaryHeap non.
-                    // Pour simplifier, on rajoute le noeud. C'est moins optimal mais fonctionnel.
                     open_set.push(existing_node.clone());
                 }
             } else {
@@ -231,6 +269,7 @@ fn find_path(
             }
         }
     }
+
     None
 }
 
