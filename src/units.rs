@@ -4,6 +4,7 @@ use crate::{
 };
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
+// use tracing::{Level, span};
 
 #[derive(Component)]
 pub struct Unit {
@@ -13,6 +14,10 @@ pub struct Unit {
 
 #[derive(Component, Default)]
 pub struct DesiredMovement(Vec3);
+
+#[derive(Component)]
+/// to add if the entity needs to checks its collisions with other entities (collisions with walls isn't affected)
+pub struct ActiveCollisions;
 
 #[derive(Component)]
 pub struct CircularCollider {
@@ -84,16 +89,11 @@ pub fn update_logic(
         // Update the ship rotation around the Z axis (perpendicular to the 2D plane of the screen)
         transform.rotate_z(rotation_factor * ship.rotation_speed * time.delta_secs());
 
-        // Get the ship's forward vector by applying the current rotation to the ships initial facing
-        // vector
         let movement_direction = transform.rotation * Vec3::Y;
-        // Get the distance the ship will move based on direction, the ship's movement speed and delta
-        // time
         let movement_distance_tiles = movement_factor * ship.movement_speed * time.delta_secs();
         let movement_distance_pixels = movement_distance_tiles * TILE_SIZE.x;
-        // Create the change in translation using the new movement direction and distance
         let translation_delta = movement_direction * movement_distance_pixels;
-        // Update the ship translation with our new translation delta
+
         desired_movement.0 = translation_delta;
     }
 }
@@ -143,13 +143,20 @@ pub fn move_and_collide_units(
         // Appliquer la position finale
         transform.translation = final_position;
     }
+}
 
-    // 3) GESTION DES COLLISIONS UNIT-UNIT
+/// handles collisions between units with ActiveCollisions component
+pub fn unit_unit_collisions(
+    mut unit_query: Query<
+        (&mut Transform, &CircularCollider),
+        (With<Unit>, With<ActiveCollisions>),
+    >,
+) {
     let mut combinations = unit_query.iter_combinations_mut();
     while let Some([mut unit_a, mut unit_b]) = combinations.fetch_next() {
         // Déstructure une seule fois en bindings mutables
-        let (transform_a, _desired_a, collider_a) = &mut unit_a;
-        let (transform_b, _desired_b, collider_b) = &mut unit_b;
+        let (transform_a, collider_a) = &mut unit_a;
+        let (transform_b, collider_b) = &mut unit_b;
 
         // Snapshot positions en 2D (avant modification)
         let pos_a = transform_a.translation.xy();

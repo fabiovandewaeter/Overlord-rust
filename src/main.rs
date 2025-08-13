@@ -1,7 +1,10 @@
 use crate::{
     map::{MapPlugin, TILE_SIZE, tile_coords_to_world},
     pathfinding::{PathfindingAgent, PathfindingPlugin},
-    units::{CircularCollider, DesiredMovement, Unit, move_and_collide_units, update_logic},
+    units::{
+        CircularCollider, DesiredMovement, Unit, move_and_collide_units, unit_unit_collisions,
+        update_logic,
+    },
 };
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
@@ -76,6 +79,7 @@ fn setup(
                 path_tolerance: 0.1, // 10% de la taille d'une tile
             },
             CircularCollider { radius: 0.4 },
+            // ActiveCollisions,
         ));
     }
 
@@ -176,7 +180,7 @@ fn main() {
             (
                 update_logic,
                 move_and_collide_units,
-                // spawn_chunks_around_units,
+                unit_unit_collisions.after(move_and_collide_units),
             ),
         )
         .run();
