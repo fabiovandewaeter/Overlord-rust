@@ -87,12 +87,12 @@ fn setup(
 }
 
 fn handle_camera_inputs(
-    mut camera_query: Query<(&mut Camera, &mut Transform, &mut Projection)>,
+    mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera>>,
     input: Res<ButtonInput<KeyCode>>,
     mut input_mouse_wheel: EventReader<MouseWheel>,
     time: Res<Time>,
 ) {
-    let Ok((mut _camera, mut transform, mut projection)) = camera_query.single_mut() else {
+    let Ok((mut transform, mut projection)) = camera_query.single_mut() else {
         return;
     };
 
