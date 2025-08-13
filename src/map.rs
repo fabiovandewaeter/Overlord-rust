@@ -1,9 +1,8 @@
-use bevy::{
-    platform::collections::{HashMap, HashSet},
-    prelude::*,
-};
+use bevy::{platform::collections::HashMap, prelude::*};
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
+
+use crate::units::Unit;
 
 pub const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
 // For this example, don't choose too large a chunk size.
@@ -132,6 +131,27 @@ fn spawn_chunks_around_camera(
     }
 }
 
+fn spawn_chunks_around_units(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    units_query: Query<&Transform, With<Unit>>,
+    mut chunk_manager: ResMut<ChunkManager>,
+) {
+    // for transform in camera_query.iter() {
+    for unit_transform in units_query {
+        let camera_chunk_pos = camera_pos_to_chunk_pos(&unit_transform.translation.xy());
+        for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
+            for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
+                let chunk_pos = IVec2::new(x, y);
+                if !chunk_manager.spawned_chunks.contains_key(&IVec2::new(x, y)) {
+                    let entity = spawn_chunk(&mut commands, &asset_server, chunk_pos);
+                    chunk_manager.spawned_chunks.insert(chunk_pos, entity);
+                }
+            }
+        }
+    }
+}
+
 #[derive(Default, Debug, Resource)]
 pub struct ChunkManager {
     pub spawned_chunks: HashMap<IVec2, Entity>,
@@ -141,6 +161,9 @@ impl Plugin for MapPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_plugins(TilemapPlugin)
             .insert_resource(ChunkManager::default())
-            .add_systems(Update, spawn_chunks_around_camera);
+            .add_systems(
+                Update,
+                (spawn_chunks_around_camera, spawn_chunks_around_units),
+            );
     }
 }
