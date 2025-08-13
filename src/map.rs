@@ -1,4 +1,7 @@
-use bevy::{platform::collections::HashSet, prelude::*};
+use bevy::{
+    platform::collections::{HashMap, HashSet},
+    prelude::*,
+};
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 
@@ -10,25 +13,26 @@ pub const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
     x: CHUNK_SIZE.x * 2,
     y: CHUNK_SIZE.y * 2,
 };
+pub const LAYER_LEVEL: f32 = -1.0;
 
 pub struct MapPlugin;
 
 #[derive(Component)]
 pub struct Wall;
 
-pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_pos: IVec2) {
+pub fn spawn_chunk(
+    commands: &mut Commands,
+    asset_server: &AssetServer,
+    chunk_pos: IVec2,
+) -> Entity {
     let tilemap_entity = commands.spawn_empty().id();
     let mut tile_storage = TileStorage::empty(CHUNK_SIZE.into());
-
     let mut rng = rand::rng();
 
     // Spawn the elements of the tilemap.
     for x in 0..CHUNK_SIZE.x {
         for y in 0..CHUNK_SIZE.y {
             let tile_pos = TilePos { x, y };
-
-            // randomly choose if it's a wall or not
-
             let mut tile_commands = commands.spawn(TileBundle {
                 position: tile_pos,
                 tilemap_id: TilemapId(tilemap_entity),
@@ -43,15 +47,15 @@ pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_po
             }
 
             let tile_entity = tile_commands.id();
-            commands.entity(tilemap_entity).add_child(tile_entity);
+            // commands.entity(tilemap_entity).add_child(tile_entity);
             tile_storage.set(&tile_pos, tile_entity);
         }
     }
 
     let transform = Transform::from_translation(Vec3::new(
-        chunk_pos.x as f32 * CHUNK_SIZE.x as f32 * TILE_SIZE.x,
-        chunk_pos.y as f32 * CHUNK_SIZE.y as f32 * TILE_SIZE.y,
-        -1.0,
+        chunk_pos.x as f32 * CHUNK_SIZE.x as f32 * TILE_SIZE.x + TILE_SIZE.x * 0.5,
+        chunk_pos.y as f32 * CHUNK_SIZE.y as f32 * TILE_SIZE.y + TILE_SIZE.y * 0.5,
+        LAYER_LEVEL,
     ));
 
     let image_handles = vec![
@@ -63,7 +67,6 @@ pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_po
         grid_size: TILE_SIZE.into(),
         size: CHUNK_SIZE.into(),
         storage: tile_storage,
-        // texture: TilemapTexture::Single(texture_handle),
         texture: TilemapTexture::Vector(image_handles),
         tile_size: TILE_SIZE,
         transform,
@@ -73,6 +76,14 @@ pub fn spawn_chunk(commands: &mut Commands, asset_server: &AssetServer, chunk_po
         },
         ..Default::default()
     });
+    tilemap_entity
+}
+
+/// Convertit une position monde (pixels) en position de chunk.
+pub fn world_pos_to_chunk_pos(world_pos: &Vec2) -> IVec2 {
+    let chunk_size_pixels = CHUNK_SIZE.as_vec2() * Vec2::new(TILE_SIZE.x, TILE_SIZE.y);
+    let pos = *world_pos / chunk_size_pixels;
+    IVec2::new(pos.x.floor() as i32, pos.y.floor() as i32)
 }
 
 pub fn camera_pos_to_chunk_pos(camera_pos: &Vec2) -> IVec2 {
@@ -82,6 +93,15 @@ pub fn camera_pos_to_chunk_pos(camera_pos: &Vec2) -> IVec2 {
     camera_pos / (chunk_size * tile_size)
 }
 
+/// Convertit une position logique (en tiles) en position de chunk
+pub fn tile_pos_to_chunk_pos(tile_pos: Vec2) -> IVec2 {
+    let chunk_size_f32 = Vec2::new(CHUNK_SIZE.x as f32, CHUNK_SIZE.y as f32);
+    IVec2::new(
+        (tile_pos.x / chunk_size_f32.x).floor() as i32,
+        (tile_pos.y / chunk_size_f32.y).floor() as i32,
+    )
+}
+
 fn spawn_chunks_around_camera(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
@@ -89,12 +109,13 @@ fn spawn_chunks_around_camera(
     mut chunk_manager: ResMut<ChunkManager>,
 ) {
     for transform in camera_query.iter() {
-        let camera_chunk_pos = camera_pos_to_chunk_pos(&transform.translation.xy());
+        let camera_chunk_pos = world_pos_to_chunk_pos(&transform.translation.xy());
         for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
             for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
-                if !chunk_manager.spawned_chunks.contains(&IVec2::new(x, y)) {
-                    chunk_manager.spawned_chunks.insert(IVec2::new(x, y));
-                    spawn_chunk(&mut commands, &asset_server, IVec2::new(x, y));
+                let chunk_pos = IVec2::new(x, y);
+                if !chunk_manager.spawned_chunks.contains_key(&chunk_pos) {
+                    let entity = spawn_chunk(&mut commands, &asset_server, chunk_pos);
+                    chunk_manager.spawned_chunks.insert(chunk_pos, entity);
                 }
             }
         }
@@ -103,7 +124,7 @@ fn spawn_chunks_around_camera(
 
 #[derive(Default, Debug, Resource)]
 pub struct ChunkManager {
-    pub spawned_chunks: HashSet<IVec2>,
+    pub spawned_chunks: HashMap<IVec2, Entity>,
 }
 
 impl Plugin for MapPlugin {

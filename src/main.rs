@@ -19,7 +19,7 @@ mod pathfinding;
 const TARGET_UPS: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
-const CAMERA_SPEED: f32 = 1200.0;
+const CAMERA_SPEED: f32 = 37.5;
 
 #[derive(Resource)]
 struct UpsCounter {
@@ -27,6 +27,11 @@ struct UpsCounter {
     last_second: f64,
     ups: u32,
 }
+
+/// CHANGEMENT: Nouveau composant pour stocker la position logique (en tuiles).
+/// C'est le coeur de la solution pour séparer la logique du rendu.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct TilePosition(pub Vec2);
 
 #[derive(Component)]
 struct Unit {
@@ -39,6 +44,16 @@ struct CircularCollider {
     pub radius: f32,
 }
 
+// Conversion coordonnées logiques -> monde
+fn tile_coords_to_world(tile_coords: Vec2) -> Vec2 {
+    Vec2::new(tile_coords.x * TILE_SIZE.x, tile_coords.y * TILE_SIZE.y)
+}
+
+// Conversion monde -> coordonnées logiques
+fn world_coords_to_tile(world_coords: Vec2) -> Vec2 {
+    Vec2::new(world_coords.x / TILE_SIZE.x, world_coords.y / TILE_SIZE.y)
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -49,25 +64,34 @@ fn setup(
 
     let player_texture_handle = asset_server.load("default.png");
     let mut rng = rand::rng();
-    for _i in 0..10 {
-        let random_number: i32 = rng.random_range(0..500); // un entier de 0 à 9
+    for _i in 0..1 {
+        // let random_number: i32 = rng.random_range(0..5); // un entier de 0 à 9
+        let random_number: i32 = 5;
+
+        // let tile_position = Vec2::new(0.5, 0.5); // Au centre de la tile (0,0)
+        // let world_position = tile_coords_to_world(tile_position);
+        let initial_tile_pos = TilePosition(Vec2::new(0.5, 0.5));
 
         commands.spawn((
             Sprite::from_image(player_texture_handle.clone()),
+            // Transform::from_translation(world_position.extend(0.0)),
             Unit {
                 // movement_speed: 500.0,
                 movement_speed: random_number as f32,
                 rotation_speed: f32::to_radians(360.0),
             },
+            initial_tile_pos, // On lui donne sa position logique initiale
             PathfindingAgent {
                 target: None,
                 path: VecDeque::new(),
-                current_path_index: 0,
+                // current_path_index: 0,
                 speed: random_number as f32,
-                path_tolerance: TILE_SIZE.x * 0.1, // 10% de la taille d'une tile
+                // path_tolerance: TILE_SIZE.x * 0.1, // 10% de la taille d'une tile
+                path_tolerance: 0.1, // 10% de la taille d'une tile
             },
             CircularCollider {
-                radius: TILE_SIZE.x * 0.4,
+                // radius: TILE_SIZE.x * 0.4,
+                radius: 0.4,
             },
         ));
     }
@@ -115,8 +139,8 @@ fn handle_camera_inputs(
     // normalizes to have constant diagonal speed
     if direction != Vec3::ZERO {
         direction = direction.normalize();
-        let speed = CAMERA_SPEED * zoom_scale.powf(0.7) * time.delta_secs();
-        transform.translation += direction * speed;
+        let speed_in_pixels = CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
+        transform.translation += direction * speed_in_pixels;
     }
 
     // Camera zoom controls
@@ -153,7 +177,6 @@ fn update_logic(
     counter.ticks += 1;
 
     for entity in query {
-        // let (ship, mut transform) = query.into_inner();
         let (ship, mut transform) = entity;
 
         let mut rotation_factor = 0.0;
@@ -179,9 +202,10 @@ fn update_logic(
         let movement_direction = transform.rotation * Vec3::Y;
         // Get the distance the ship will move based on direction, the ship's movement speed and delta
         // time
-        let movement_distance = movement_factor * ship.movement_speed * time.delta_secs();
+        let movement_distance_tiles = movement_factor * ship.movement_speed * time.delta_secs();
+        let movement_distance_pixels = movement_distance_tiles * TILE_SIZE.x;
         // Create the change in translation using the new movement direction and distance
-        let translation_delta = movement_direction * movement_distance;
+        let translation_delta = movement_direction * movement_distance_pixels;
         // Update the ship translation with our new translation delta
         transform.translation += translation_delta;
     }
@@ -254,18 +278,23 @@ fn move_and_collide_units(
     let delta_time = time.delta_secs();
 
     // 1) MOUVEMENT DES UNITÉS
-    for (_entity, unit, mut transform, _collider) in unit_query.iter_mut() {
+    for (_entity, unit, mut transform, collider) in unit_query.iter_mut() {
         // Mouvement simple : les unités tournent et avancent
         transform.rotate_z(unit.rotation_speed * delta_time * 0.1);
         let movement_direction = transform.up();
-        let movement_amount = unit.movement_speed * delta_time;
+        // let movement_amount = unit.movement_speed * delta_time;
+        let movement_amount_tiles = unit.movement_speed * delta_time;
+        let movement_amount_pixels = movement_amount_tiles * TILE_SIZE.x;
 
         // Position proposée après mouvement
-        let proposed_position = transform.translation + movement_direction * movement_amount;
+        let proposed_position = transform.translation + movement_direction * movement_amount_pixels;
 
         // 2) GESTION DES COLLISIONS UNIT-MUR
         let mut final_position = proposed_position;
-        let unit_pos_2d = Vec2::new(proposed_position.x, proposed_position.y);
+        // let unit_pos_2d = Vec2::new(proposed_position.x, proposed_position.y);
+        // Convertir la position de l'unité en coordonnées de tiles pour les collisions
+        let unit_tile_pos =
+            world_coords_to_tile(Vec2::new(proposed_position.x, proposed_position.y));
 
         // Vérifier les collisions avec tous les murs
         for (wall_tile_pos, wall_tilemap_id) in wall_query.iter() {
@@ -278,17 +307,24 @@ fn move_and_collide_units(
                 );
 
                 let tile_size = Vec2::new(grid_size.x, grid_size.y);
+                // Convertir le rayon de collision de tiles en pixels
+                let collider_radius_pixels = collider.radius * TILE_SIZE.x;
 
                 // Vérifier la collision cercle-rectangle
-                if let Some(resolution_vector) =
-                    circle_rect_collision(unit_pos_2d, _collider.radius, tile_world_pos, tile_size)
-                {
+                if let Some(resolution_vector) = circle_rect_collision(
+                    Vec2::new(proposed_position.x, proposed_position.y),
+                    collider_radius_pixels,
+                    tile_world_pos,
+                    tile_size,
+                ) {
                     // Il y a collision, ajuster la position
                     final_position.x += resolution_vector.x;
                     final_position.y += resolution_vector.y;
                 }
             }
         }
+
+        //TODO: modifier pour éviter de faire la logique en pixels, et faire la convertions en pixels à la fin
 
         // Appliquer la position finale
         transform.translation = final_position;
@@ -301,7 +337,11 @@ fn move_and_collide_units(
         let (_entity_b, _unit_b, transform_b, collider_b) = &unit_b;
 
         let distance = transform_a.translation.distance(transform_b.translation);
-        let min_distance = collider_a.radius + collider_b.radius;
+        // let min_distance = collider_a.radius + collider_b.radius;
+        // Convertir les rayons de collision de tiles en pixels
+        let radius_a_pixels = collider_a.radius * TILE_SIZE.x;
+        let radius_b_pixels = collider_b.radius * TILE_SIZE.x;
+        let min_distance = radius_a_pixels + radius_b_pixels;
 
         if distance < min_distance {
             let overlap = min_distance - distance;
@@ -327,12 +367,26 @@ fn spawn_chunks_around_units(
         let camera_chunk_pos = camera_pos_to_chunk_pos(&unit_transform.translation.xy());
         for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
             for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
-                if !chunk_manager.spawned_chunks.contains(&IVec2::new(x, y)) {
-                    chunk_manager.spawned_chunks.insert(IVec2::new(x, y));
-                    spawn_chunk(&mut commands, &asset_server, IVec2::new(x, y));
+                let chunk_pos = IVec2::new(x, y);
+                if !chunk_manager.spawned_chunks.contains_key(&IVec2::new(x, y)) {
+                    // chunk_manager.spawned_chunks.insert(IVec2::new(x, y));
+                    // spawn_chunk(&mut commands, &asset_server, IVec2::new(x, y));
+                    let entity = spawn_chunk(&mut commands, &asset_server, chunk_pos);
+                    chunk_manager.spawned_chunks.insert(chunk_pos, entity);
                 }
             }
         }
+    }
+}
+
+/// CHANGEMENT: Nouveau système qui synchronise le `Transform` (pixels) avec le `TilePosition` (logique).
+/// Ce système est la colle entre notre logique et le moteur de rendu de Bevy.
+fn sync_transform_from_tile_pos(mut query: Query<(&TilePosition, &mut Transform)>) {
+    for (tile_pos, mut transform) in query.iter_mut() {
+        transform.translation.x = tile_pos.0.x * map::TILE_SIZE.x;
+        transform.translation.y = tile_pos.0.y * map::TILE_SIZE.y;
+        // La coordonnée Z peut être utilisée pour le "layering"
+        transform.translation.z = 1.0;
     }
 }
 
@@ -361,6 +415,7 @@ fn main() {
             FixedUpdate,
             (
                 update_logic,
+                sync_transform_from_tile_pos,
                 // move_and_collide_units,
                 spawn_chunks_around_units,
             ),
