@@ -37,9 +37,69 @@ struct Unit {
     rotation_speed: f32,
 }
 
+#[derive(Component, Default)]
+struct DesiredMovement(Vec3);
+
 #[derive(Component)]
 struct CircularCollider {
     pub radius: f32,
+}
+
+fn display_fps_ups(
+    time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
+    mut counter: ResMut<UpsCounter>,
+) {
+    let now = time.elapsed_secs_f64();
+    if now - counter.last_second >= 1.0 {
+        // Calcule l’UPS
+        counter.ups = counter.ticks;
+        counter.ticks = 0;
+        counter.last_second = now;
+
+        // Récupère le FPS depuis le plugin
+        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
+            if let Some(fps_avg) = fps.smoothed() {
+                println!("FPS: {:.0} | UPS: {}", fps_avg, counter.ups);
+            }
+        }
+    }
+}
+
+// Fonction utilitaire pour calculer la collision cercle-rectangle
+fn circle_rect_collision(
+    circle_center: Vec2,
+    circle_radius: f32,
+    rect_center: Vec2,
+    rect_size: Vec2,
+) -> Option<Vec2> {
+    // Calculer le point le plus proche du rectangle par rapport au centre du cercle
+    let closest_x = circle_center.x.clamp(
+        rect_center.x - rect_size.x / 2.0,
+        rect_center.x + rect_size.x / 2.0,
+    );
+    let closest_y = circle_center.y.clamp(
+        rect_center.y - rect_size.y / 2.0,
+        rect_center.y + rect_size.y / 2.0,
+    );
+
+    let closest_point = Vec2::new(closest_x, closest_y);
+    let distance_vec = circle_center - closest_point;
+    let distance = distance_vec.length();
+
+    if distance < circle_radius {
+        // Il y a collision, retourner le vecteur de résolution
+        if distance > 0.0 {
+            let penetration_depth = circle_radius - distance;
+            Some(distance_vec.normalize() * penetration_depth)
+        } else {
+            // Le centre du cercle est exactement sur le point le plus proche
+            // Choisir une direction par défaut (vers le haut)
+            Some(Vec2::Y * circle_radius)
+        }
+    } else {
+        None
+    }
 }
 
 fn setup(
@@ -61,6 +121,7 @@ fn setup(
         commands.spawn((
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(1.0)),
+            DesiredMovement::default(),
             Unit {
                 movement_speed: random_number as f32,
                 rotation_speed: f32::to_radians(360.0),
@@ -149,14 +210,13 @@ fn handle_camera_inputs(
 fn update_logic(
     mut counter: ResMut<UpsCounter>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    // query: Single<(&Entity, &mut Transform)>,
-    query: Query<(&Unit, &mut Transform)>,
+    query: Query<(&Unit, &mut Transform, &mut DesiredMovement)>,
     time: Res<Time>,
 ) {
     counter.ticks += 1;
 
     for entity in query {
-        let (ship, mut transform) = entity;
+        let (ship, mut transform, mut desired_movement) = entity;
 
         let mut rotation_factor = 0.0;
         let mut movement_factor = 0.0;
@@ -186,70 +246,19 @@ fn update_logic(
         // Create the change in translation using the new movement direction and distance
         let translation_delta = movement_direction * movement_distance_pixels;
         // Update the ship translation with our new translation delta
-        transform.translation += translation_delta;
-    }
-}
-
-fn display_fps_ups(
-    time: Res<Time>,
-    diagnostics: Res<DiagnosticsStore>,
-    mut counter: ResMut<UpsCounter>,
-) {
-    let now = time.elapsed_secs_f64();
-    if now - counter.last_second >= 1.0 {
-        // Calcule l’UPS
-        counter.ups = counter.ticks;
-        counter.ticks = 0;
-        counter.last_second = now;
-
-        // Récupère le FPS depuis le plugin
-        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
-            if let Some(fps_avg) = fps.smoothed() {
-                println!("FPS: {:.0} | UPS: {}", fps_avg, counter.ups);
-            }
-        }
-    }
-}
-
-// Fonction utilitaire pour calculer la collision cercle-rectangle
-fn circle_rect_collision(
-    circle_center: Vec2,
-    circle_radius: f32,
-    rect_center: Vec2,
-    rect_size: Vec2,
-) -> Option<Vec2> {
-    // Calculer le point le plus proche du rectangle par rapport au centre du cercle
-    let closest_x = circle_center.x.clamp(
-        rect_center.x - rect_size.x / 2.0,
-        rect_center.x + rect_size.x / 2.0,
-    );
-    let closest_y = circle_center.y.clamp(
-        rect_center.y - rect_size.y / 2.0,
-        rect_center.y + rect_size.y / 2.0,
-    );
-
-    let closest_point = Vec2::new(closest_x, closest_y);
-    let distance_vec = circle_center - closest_point;
-    let distance = distance_vec.length();
-
-    if distance < circle_radius {
-        // Il y a collision, retourner le vecteur de résolution
-        if distance > 0.0 {
-            let penetration_depth = circle_radius - distance;
-            Some(distance_vec.normalize() * penetration_depth)
-        } else {
-            // Le centre du cercle est exactement sur le point le plus proche
-            // Choisir une direction par défaut (vers le haut)
-            Some(Vec2::Y * circle_radius)
-        }
-    } else {
-        None
+        desired_movement.0 = translation_delta;
     }
 }
 
 /// Déplace les unités et gère les collisions.
 fn move_and_collide_units(
-    mut unit_query: Query<(Entity, &Unit, &mut Transform, &CircularCollider)>,
+    mut unit_query: Query<(
+        Entity,
+        &Unit,
+        &mut Transform,
+        &DesiredMovement,
+        &CircularCollider,
+    )>,
     wall_query: Query<(&TilePos, &TilemapId), (With<Wall>, Without<Unit>)>,
     tilemap_q: Query<(&TilemapGridSize, &Transform), (With<TileStorage>, Without<Unit>)>,
     time: Res<Time>,
@@ -257,17 +266,9 @@ fn move_and_collide_units(
     let delta_time = time.delta_secs();
 
     // 1) MOUVEMENT DES UNITÉS
-    for (_entity, unit, mut transform, collider) in unit_query.iter_mut() {
-        // Mouvement simple : les unités tournent et avancent
-        // transform.rotate_z(unit.rotation_speed * delta_time * 0.1);
-        let movement_direction = transform.up();
-        let movement_amount_tiles = unit.movement_speed * delta_time;
-        let movement_amount_pixels = movement_amount_tiles * TILE_SIZE.x;
-
-        // Position proposée après mouvement
-        let proposed_position = transform.translation + movement_direction * movement_amount_pixels;
-
+    for (_entity, unit, mut transform, desired_movement, collider) in unit_query.iter_mut() {
         // 2) GESTION DES COLLISIONS UNIT-MUR
+        let proposed_position = transform.translation + desired_movement.0;
         let mut final_position = proposed_position;
 
         // Vérifier les collisions avec tous les murs
@@ -306,25 +307,31 @@ fn move_and_collide_units(
 
     // 3) GESTION DES COLLISIONS UNIT-UNIT
     let mut combinations = unit_query.iter_combinations_mut();
-    while let Some([unit_a, unit_b]) = combinations.fetch_next() {
-        let (_entity_a, _unit_a, transform_a, collider_a) = &unit_a;
-        let (_entity_b, _unit_b, transform_b, collider_b) = &unit_b;
+    while let Some([mut unit_a, mut unit_b]) = combinations.fetch_next() {
+        // Déstructure une seule fois en bindings mutables
+        let (_entity_a, _unit_a, transform_a, _desired_a, collider_a) = &mut unit_a;
+        let (_entity_b, _unit_b, transform_b, _desired_b, collider_b) = &mut unit_b;
 
-        let distance = transform_a.translation.distance(transform_b.translation);
-        // Convertir les rayons de collision de tiles en pixels
+        // Snapshot positions en 2D (avant modification)
+        let pos_a = transform_a.translation.xy();
+        let pos_b = transform_b.translation.xy();
+
+        // Rayons en pixels
         let radius_a_pixels = collider_a.radius * TILE_SIZE.x;
         let radius_b_pixels = collider_b.radius * TILE_SIZE.x;
         let min_distance = radius_a_pixels + radius_b_pixels;
 
+        let distance = pos_a.distance(pos_b);
+
         if distance < min_distance {
             let overlap = min_distance - distance;
-            let direction = (transform_a.translation - transform_b.translation).normalize_or_zero();
+            // direction 2D, en évitant la division par zéro
+            let dir2 = (pos_a - pos_b).normalize_or_zero();
+            let dir3 = dir2.extend(0.0); // convertir en Vec3 pour appliquer sur Transform
 
-            let (_, _, mut transform_a_mut, _) = unit_a;
-            transform_a_mut.translation += direction * overlap / 2.0;
-
-            let (_, _, mut transform_b_mut, _) = unit_b;
-            transform_b_mut.translation -= direction * overlap / 2.0;
+            // Appliquer la résolution équitablement
+            transform_a.translation += dir3 * (overlap / 2.0);
+            transform_b.translation -= dir3 * (overlap / 2.0);
         }
     }
 }
