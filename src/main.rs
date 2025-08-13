@@ -1,20 +1,14 @@
-use std::collections::VecDeque;
-
+use crate::{
+    map::{MapPlugin, TILE_SIZE, tile_coords_to_world},
+    pathfinding::{PathfindingAgent, PathfindingPlugin},
+    units::{CircularCollider, DesiredMovement, Unit, move_and_collide_units, update_logic},
+};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::mouse::{MouseScrollUnit, MouseWheel},
     prelude::*,
 };
-use bevy_ecs_tilemap::{map::*, tiles::*};
-
-use crate::{
-    map::{
-        ChunkManager, MapPlugin, TILE_SIZE, Wall, camera_pos_to_chunk_pos, spawn_chunk,
-        tile_coords_to_world,
-    },
-    pathfinding::{PathfindingAgent, PathfindingPlugin},
-    units::{CircularCollider, DesiredMovement, Unit, move_and_collide_units, update_logic},
-};
+use std::collections::VecDeque;
 
 mod map;
 mod pathfinding;
@@ -62,9 +56,7 @@ fn setup(
     use bevy::color::palettes::css::GREEN;
 
     let player_texture_handle = asset_server.load("default.png");
-    let mut rng = rand::rng();
     for _i in 0..1 {
-        // let random_number: i32 = rng.random_range(0..5); // un entier de 0 à 9
         let random_number: i32 = 5;
 
         let world_pos = tile_coords_to_world(Vec2::new(0.5, 0.5));

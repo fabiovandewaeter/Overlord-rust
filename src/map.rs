@@ -103,7 +103,7 @@ pub fn camera_pos_to_chunk_pos(camera_pos: &Vec2) -> IVec2 {
 }
 
 /// Convertit une position logique (en tiles) en position de chunk
-pub fn tile_pos_to_chunk_pos(tile_pos: Vec2) -> IVec2 {
+pub fn _tile_pos_to_chunk_pos(tile_pos: Vec2) -> IVec2 {
     let chunk_size_f32 = Vec2::new(CHUNK_SIZE.x as f32, CHUNK_SIZE.y as f32);
     IVec2::new(
         (tile_pos.x / chunk_size_f32.x).floor() as i32,

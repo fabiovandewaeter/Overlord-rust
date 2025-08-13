@@ -1,12 +1,9 @@
-use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
-
 use crate::{
     UpsCounter,
     map::{TILE_SIZE, Wall},
 };
-
-pub struct UnitsPlugin;
+use bevy::prelude::*;
+use bevy_ecs_tilemap::prelude::*;
 
 #[derive(Component)]
 pub struct Unit {
@@ -103,21 +100,12 @@ pub fn update_logic(
 
 /// Déplace les unités et gère les collisions.
 pub fn move_and_collide_units(
-    mut unit_query: Query<(
-        Entity,
-        &Unit,
-        &mut Transform,
-        &DesiredMovement,
-        &CircularCollider,
-    )>,
+    mut unit_query: Query<(&mut Transform, &DesiredMovement, &CircularCollider), With<Unit>>,
     wall_query: Query<(&TilePos, &TilemapId), (With<Wall>, Without<Unit>)>,
     tilemap_q: Query<(&TilemapGridSize, &Transform), (With<TileStorage>, Without<Unit>)>,
-    time: Res<Time>,
 ) {
-    let delta_time = time.delta_secs();
-
     // 1) MOUVEMENT DES UNITÉS
-    for (_entity, unit, mut transform, desired_movement, collider) in unit_query.iter_mut() {
+    for (mut transform, desired_movement, collider) in unit_query.iter_mut() {
         // 2) GESTION DES COLLISIONS UNIT-MUR
         let proposed_position = transform.translation + desired_movement.0;
         let mut final_position = proposed_position;
@@ -160,8 +148,8 @@ pub fn move_and_collide_units(
     let mut combinations = unit_query.iter_combinations_mut();
     while let Some([mut unit_a, mut unit_b]) = combinations.fetch_next() {
         // Déstructure une seule fois en bindings mutables
-        let (_entity_a, _unit_a, transform_a, _desired_a, collider_a) = &mut unit_a;
-        let (_entity_b, _unit_b, transform_b, _desired_b, collider_b) = &mut unit_b;
+        let (transform_a, _desired_a, collider_a) = &mut unit_a;
+        let (transform_b, _desired_b, collider_b) = &mut unit_b;
 
         // Snapshot positions en 2D (avant modification)
         let pos_a = transform_a.translation.xy();
