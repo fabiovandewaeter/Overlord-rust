@@ -1,4 +1,6 @@
-use bevy::{platform::collections::HashMap, prelude::*};
+use std::collections::HashMap;
+
+use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 
@@ -17,7 +19,7 @@ pub const LAYER_LEVEL: f32 = -1.0;
 pub struct MapPlugin;
 
 #[derive(Component)]
-pub struct Wall;
+pub struct SolidStructure;
 
 pub fn spawn_chunk(
     commands: &mut Commands,
@@ -41,7 +43,7 @@ pub fn spawn_chunk(
 
             let is_wall = rng.random_bool(0.2);
             if is_wall {
-                tile_commands.insert(Wall);
+                tile_commands.insert(SolidStructure);
                 tile_commands.insert(TileTextureIndex(1));
             }
 

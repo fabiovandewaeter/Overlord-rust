@@ -1,12 +1,12 @@
 use crate::{
     UpsCounter,
-    map::{TILE_SIZE, Wall},
+    map::{SolidStructure, TILE_SIZE},
+    units::states::Idle,
 };
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
-// use tracing::{Level, span};
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct Unit {
     pub movement_speed: f32,
     pub rotation_speed: f32,
@@ -15,8 +15,8 @@ pub struct Unit {
 #[derive(Component, Default)]
 pub struct DesiredMovement(Vec3);
 
-#[derive(Component)]
 /// to add if the entity needs to checks its collisions with other entities (collisions with walls isn't affected)
+#[derive(Component)]
 pub struct ActiveCollisions;
 
 #[derive(Component)]
@@ -101,7 +101,7 @@ pub fn update_logic(
 /// Déplace les unités et gère les collisions.
 pub fn move_and_collide_units(
     mut unit_query: Query<(&mut Transform, &DesiredMovement, &CircularCollider), With<Unit>>,
-    wall_query: Query<(&TilePos, &TilemapId), (With<Wall>, Without<Unit>)>,
+    wall_query: Query<(&TilePos, &TilemapId), (With<SolidStructure>, Without<Unit>)>,
     tilemap_q: Query<(&TilemapGridSize, &Transform), (With<TileStorage>, Without<Unit>)>,
 ) {
     // 1) MOUVEMENT DES UNITÉS
@@ -180,4 +180,8 @@ pub fn unit_unit_collisions(
             transform_b.translation -= dir3 * (overlap / 2.0);
         }
     }
+}
+
+pub fn display_idling_units(unit_query: Query<(), (With<Idle>, With<Unit>)>) {
+    println!("Idle units : {}", unit_query.iter().count());
 }

@@ -1,18 +1,23 @@
 use crate::{
-    map::{MapPlugin, TILE_SIZE, tile_coords_to_world},
+    items::{Inventory, display_inventories},
+    map::{MapPlugin, SolidStructure, TILE_SIZE, tile_coords_to_world},
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
-        CircularCollider, DesiredMovement, Unit, move_and_collide_units, unit_unit_collisions,
-        update_logic,
+        CircularCollider, DesiredMovement, Unit, display_idling_units, move_and_collide_units,
+        states::Idle, unit_unit_collisions, update_logic,
     },
 };
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
-    input::mouse::{MouseScrollUnit, MouseWheel},
+    input::{
+        common_conditions::{input_just_pressed, input_pressed},
+        mouse::{MouseScrollUnit, MouseWheel},
+    },
     prelude::*,
 };
 use std::collections::VecDeque;
 
+mod items;
 mod map;
 mod pathfinding;
 mod units;
@@ -64,6 +69,7 @@ fn setup(
 
         let world_pos = tile_coords_to_world(Vec2::new(0.5, 0.5));
 
+        // unit
         commands.spawn((
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(1.0)),
@@ -72,16 +78,27 @@ fn setup(
                 movement_speed: random_number as f32,
                 rotation_speed: f32::to_radians(360.0),
             },
+            // keep that component because entities will always move so it's useless to add/remove it everytime
             PathfindingAgent {
                 target: None,
                 path: VecDeque::new(),
                 speed: random_number as f32,
                 path_tolerance: 0.1, // 10% de la taille d'une tile
             },
+            Idle,
             CircularCollider { radius: 0.4 },
             // ActiveCollisions,
+            Inventory::new(),
         ));
     }
+
+    let world_pos = tile_coords_to_world(Vec2::new(5.5, 0.5));
+    // chest
+    commands.spawn((
+        Transform::from_translation(world_pos.extend(1.0)),
+        SolidStructure,
+        Inventory::new(),
+    ));
 
     commands.spawn((Camera2d, Camera { ..default() }));
     commands.spawn((
@@ -180,7 +197,9 @@ fn main() {
             (
                 update_logic,
                 move_and_collide_units,
+                display_inventories.run_if(input_pressed(KeyCode::KeyI)),
                 unit_unit_collisions.after(move_and_collide_units),
+                display_idling_units,
             ),
         )
         .run();

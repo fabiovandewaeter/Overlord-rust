@@ -1,20 +1,13 @@
-use crate::map::{self, CHUNK_SIZE, ChunkManager, Wall, world_coords_to_tile};
+use crate::map::{self, CHUNK_SIZE, ChunkManager, SolidStructure, world_coords_to_tile};
 use crate::pathfinding;
+use crate::units::states::Idle;
+use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 pub struct PathfindingPlugin;
-
-#[derive(Component)]
-pub struct PathfindingAgent {
-    pub target: Option<Vec2>,
-    pub path: VecDeque<Vec2>,
-    // pub current_path_index: usize,
-    pub speed: f32,
-    pub path_tolerance: f32,
-}
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 struct GridPos {
@@ -93,12 +86,21 @@ fn global_to_local_tile_pos(tile_pos: GridPos) -> TilePos {
 
 // ========== PATHFINDING UTILISANT DIRECTEMENT VOTRE TILEMAP ==========
 
+#[derive(Component)]
+pub struct PathfindingAgent {
+    pub target: Option<Vec2>,
+    pub path: VecDeque<Vec2>,
+    // pub current_path_index: usize,
+    pub speed: f32,
+    pub path_tolerance: f32,
+}
+
 /// Vérifie si une tuile est passable (n'est pas un mur).
 fn is_tile_passable(
     tile_pos: GridPos,
     chunk_manager: &Res<ChunkManager>,
     tile_storage_query: &Query<&TileStorage>,
-    wall_query: &Query<(), With<Wall>>,
+    wall_query: &Query<(), With<SolidStructure>>,
 ) -> bool {
     let chunk_pos = global_tile_to_chunk_pos(tile_pos);
     if let Some(chunk_entity) = chunk_manager.spawned_chunks.get(&chunk_pos) {
@@ -154,7 +156,7 @@ fn find_path(
     end_pos: Vec2,
     chunk_manager: &Res<ChunkManager>,
     tile_storage_query: &Query<&TileStorage>,
-    wall_query: &Query<(), With<Wall>>,
+    wall_query: &Query<(), With<SolidStructure>>,
 ) -> Option<VecDeque<Vec2>> {
     let start_grid = tile_to_grid_pos(start_pos);
     let end_grid = tile_to_grid_pos(end_pos);
@@ -280,7 +282,7 @@ pub fn pathfinding_system(
     mut agents_query: Query<(&mut PathfindingAgent, &Transform)>,
     chunk_manager: Res<ChunkManager>,
     tile_storage_query: Query<&TileStorage>,
-    wall_query: Query<(), With<Wall>>,
+    wall_query: Query<(), With<SolidStructure>>,
 ) {
     for (mut agent, transform) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
@@ -344,30 +346,31 @@ pub fn movement_system(
 
 /// Système pour définir une cible avec le clic droit de la souris.
 fn mouse_target_system(
-    mut agents_query: Query<&mut pathfinding::PathfindingAgent>,
-    mouse_input: Res<ButtonInput<MouseButton>>,
+    mut commands: Commands,
+    mut agents_query: Query<(Entity, &mut pathfinding::PathfindingAgent, Option<&Idle>)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
 ) {
-    if mouse_input.just_pressed(MouseButton::Right) {
-        let Some(window) = windows.iter().next() else {
-            return;
-        };
-        let Some((camera, camera_transform)) = cameras.iter().next() else {
-            return;
-        };
+    let Some(window) = windows.iter().next() else {
+        return;
+    };
+    let Some((camera, camera_transform)) = cameras.iter().next() else {
+        return;
+    };
 
-        if let Some(cursor_pos) = window.cursor_position() {
-            if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
-                // CHANGEMENT: On convertit la position monde (pixels) en position tuile UNE SEULE FOIS ICI.
-                let tile_pos = Vec2::new(
-                    world_pos.x / map::TILE_SIZE.x,
-                    world_pos.y / map::TILE_SIZE.y,
-                );
-                for mut agent in agents_query.iter_mut() {
-                    agent.target = Some(tile_pos);
-                    agent.path.clear(); // Force le recalcul du chemin
+    if let Some(cursor_pos) = window.cursor_position() {
+        if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
+            // CHANGEMENT: On convertit la position monde (pixels) en position tuile UNE SEULE FOIS ICI.
+            let tile_pos = Vec2::new(
+                world_pos.x / map::TILE_SIZE.x,
+                world_pos.y / map::TILE_SIZE.y,
+            );
+            for (entity, mut agent, idle) in agents_query.iter_mut() {
+                if idle.is_some() {
+                    commands.entity(entity).remove::<Idle>();
                 }
+                agent.target = Some(tile_pos);
+                agent.path.clear(); // Force le recalcul du chemin
             }
         }
     }
@@ -377,7 +380,12 @@ impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (pathfinding_system, movement_system, mouse_target_system).chain(),
+            (
+                pathfinding_system,
+                movement_system,
+                mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
+            )
+                .chain(),
         );
     }
 }
