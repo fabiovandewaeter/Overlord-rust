@@ -1,6 +1,5 @@
 use crate::map::{self, CHUNK_SIZE, ChunkManager, SolidStructure, world_coords_to_tile};
-use crate::pathfinding;
-use crate::units::states::Idle;
+use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
@@ -307,12 +306,13 @@ pub fn pathfinding_system(
     }
 }
 
-/// Système qui déplace les agents le long de leur chemin.
+/// makes the entiry moves along the path ; sets CurrentTask.0 to None when reached target
 pub fn movement_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &mut Transform)>,
+    // mut commands: Commands,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut Transform, &mut CurrentTask)>,
     time: Res<Time>,
 ) {
-    for (mut agent, mut transform) in agents_query.iter_mut() {
+    for (mut agent, mut transform, mut current_task) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
             let current_tile_pos = world_coords_to_tile(transform.translation.xy());
             let distance = current_tile_pos.distance(next_waypoint);
@@ -323,6 +323,7 @@ pub fn movement_system(
                 if agent.path.is_empty() {
                     agent.target = None; // Destination finale atteinte
                 }
+                current_task.0 = None;
             } else {
                 // Se déplacer vers le waypoint
                 let direction = (next_waypoint - current_tile_pos).normalize_or_zero();
@@ -346,8 +347,7 @@ pub fn movement_system(
 
 /// Système pour définir une cible avec le clic droit de la souris.
 fn mouse_target_system(
-    mut commands: Commands,
-    mut agents_query: Query<(Entity, &mut pathfinding::PathfindingAgent, Option<&Idle>)>,
+    mut agents_query: Query<&mut PathfindingAgent>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
 ) {
@@ -365,10 +365,7 @@ fn mouse_target_system(
                 world_pos.x / map::TILE_SIZE.x,
                 world_pos.y / map::TILE_SIZE.y,
             );
-            for (entity, mut agent, idle) in agents_query.iter_mut() {
-                if idle.is_some() {
-                    commands.entity(entity).remove::<Idle>();
-                }
+            for mut agent in agents_query.iter_mut() {
                 agent.target = Some(tile_pos);
                 agent.path.clear(); // Force le recalcul du chemin
             }

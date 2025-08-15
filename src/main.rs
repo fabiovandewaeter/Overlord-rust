@@ -1,21 +1,24 @@
 use crate::{
     items::{Inventory, display_inventories},
-    map::{MapPlugin, SolidStructure, TILE_SIZE, tile_coords_to_world},
+    map::{Chest, MapPlugin, SolidStructure, TILE_SIZE, tile_coords_to_world},
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
-        CircularCollider, DesiredMovement, Unit, display_idling_units, move_and_collide_units,
-        states::Idle, unit_unit_collisions, update_logic,
+        CircularCollider, DesiredMovement, Unit, display_available_units, move_and_collide_units,
+        states::Available,
+        tasks::{CurrentTask, TaskQueue, TasksPlugin},
+        unit_unit_collisions, update_logic,
     },
 };
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::{
-        common_conditions::{input_just_pressed, input_pressed},
+        common_conditions::input_pressed,
         mouse::{MouseScrollUnit, MouseWheel},
     },
     prelude::*,
+    time::common_conditions::on_timer,
 };
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Duration};
 
 mod items;
 mod map;
@@ -85,10 +88,12 @@ fn setup(
                 speed: random_number as f32,
                 path_tolerance: 0.1, // 10% de la taille d'une tile
             },
-            Idle,
+            Available,
             CircularCollider { radius: 0.4 },
             // ActiveCollisions,
             Inventory::new(),
+            TaskQueue::from(vec![]),
+            CurrentTask(None),
         ));
     }
 
@@ -98,6 +103,7 @@ fn setup(
         Transform::from_translation(world_pos.extend(1.0)),
         SolidStructure,
         Inventory::new(),
+        Chest,
     ));
 
     commands.spawn((Camera2d, Camera { ..default() }));
@@ -184,6 +190,7 @@ fn main() {
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(MapPlugin)
         .add_plugins(PathfindingPlugin)
+        .add_plugins(TasksPlugin)
         .insert_resource(UpsCounter {
             ticks: 0,
             last_second: 0.0,
@@ -197,9 +204,9 @@ fn main() {
             (
                 update_logic,
                 move_and_collide_units,
-                display_inventories.run_if(input_pressed(KeyCode::KeyI)),
                 unit_unit_collisions.after(move_and_collide_units),
-                display_idling_units,
+                display_inventories.run_if(input_pressed(KeyCode::KeyI)),
+                display_available_units.run_if(on_timer(Duration::from_secs(1))),
             ),
         )
         .run();

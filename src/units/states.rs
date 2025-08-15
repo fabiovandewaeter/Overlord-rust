@@ -1,6 +1,13 @@
 use bevy::prelude::*;
 
-// TODO: use that to find all idle units and assign tasks to them
+/// example: when units.tasks_queue.is_empty() && no currentTask
 #[derive(Component)]
 #[component(storage = "SparseSet")]
-pub struct Idle;
+pub struct Available;
+
+/// example: units reached a chest and wait to interact with the chest inventory
+#[derive(Component)]
+#[component(storage = "SparseSet")]
+pub struct WaitingToInteract {
+    target: Entity,
+}

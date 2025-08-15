@@ -1,10 +1,15 @@
 use crate::{
     UpsCounter,
     map::{SolidStructure, TILE_SIZE},
-    units::states::Idle,
+    units::{
+        states::Available,
+        tasks::{CurrentTask, TaskQueue},
+    },
 };
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
+
+pub const UNIT_REACH: f32 = 1.0;
 
 #[derive(Component, Debug)]
 pub struct Unit {
@@ -182,6 +187,14 @@ pub fn unit_unit_collisions(
     }
 }
 
-pub fn display_idling_units(unit_query: Query<(), (With<Idle>, With<Unit>)>) {
-    println!("Idle units : {}", unit_query.iter().count());
+pub fn display_available_units(
+    unit_query: Query<(&TaskQueue, &CurrentTask), (With<Available>, With<Unit>)>,
+) {
+    let mut counter = 0;
+    for (_task_queue, current_task) in unit_query.iter() {
+        if current_task.0.is_none() {
+            counter += 1;
+        }
+    }
+    println!("Counter available units : {}", counter);
 }

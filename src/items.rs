@@ -17,17 +17,11 @@ pub enum UniqueItemKind {
     IronSword,
 }
 
-/// reference to owner entity
-#[derive(Component)]
-pub struct InInventory {
-    pub owner: Entity,
-}
-
 #[derive(Component, Default)]
 pub struct Inventory {
     pub stackable_items: HashMap<ItemKind, u32>,
-    // pub unique_items: Vec<Entity>,
-    pub unique_items: HashMap<UniqueItemKind, Vec<Entity>>,
+    pub unique_items: Vec<Entity>,
+    // pub unique_items: HashMap<UniqueItemKind, Vec<Entity>>,
 }
 
 #[derive(Component)]
@@ -36,21 +30,19 @@ pub struct Durability {
     pub max: u16,
 }
 
-// https://gemini.google.com/app/1401bd7c131ec816?hl=fr
-
 impl Inventory {
     pub fn new() -> Self {
         Self {
             stackable_items: HashMap::new(),
-            unique_items: HashMap::new(),
+            unique_items: Vec::new(),
         }
     }
 
-    fn add(&mut self, kind: ItemKind, quantity: u32) {
+    pub fn add(&mut self, kind: ItemKind, quantity: u32) {
         *self.stackable_items.entry(kind).or_insert(0) += quantity;
     }
 
-    /// remove up to qty, returns true if fully removed, false if not enough
+    /// remove up to quantity, returns true if fully removed, false if not enough
     pub fn remove(&mut self, kind: &ItemKind, quantity: u32) -> bool {
         if let Some(current_quantity) = self.stackable_items.get_mut(kind) {
             if *current_quantity >= quantity {
@@ -68,24 +60,21 @@ impl Inventory {
         *self.stackable_items.get(kind).unwrap_or(&0)
     }
 
-    pub fn has_item(&self, kind: ItemKind, quantity: u32) -> bool {
+    pub fn has_enough_item(&self, kind: ItemKind, quantity: u32) -> bool {
         self.stackable_items.get(&kind).unwrap_or(&0) >= &quantity
     }
 
     pub fn add_unique_item(&mut self, item_entity: Entity) {
-        // self.unique_items.push(item_entity);
+        self.unique_items.push(item_entity);
     }
 
-    /// try to pop any unique item of that kind (take one)
-    pub fn pop_unique_of_kind(&mut self, kind: UniqueItemKind) -> Option<Entity> {
-        // if let Some(vec) = self.unique_items.get_mut(&kind) {
-        //     let ent = vec.pop();
-        //     if vec.is_empty() {
-        //         self.unique_items.remove(&kind);
-        //     }
-        //     return ent;
-        // }
-        None
+    pub fn remove_unique_item(&mut self, item_entity: Entity) -> bool {
+        if let Some(pos) = self.unique_items.iter().position(|&x| x == item_entity) {
+            self.unique_items.remove(pos);
+            true
+        } else {
+            false
+        }
     }
 }
 
