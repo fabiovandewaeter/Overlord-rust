@@ -1,5 +1,6 @@
 use crate::map::{
-    self, CHUNK_SIZE, ChunkManager, SolidStructure, Structure, StructureManager, world_pos_to_tile,
+    self, CHUNK_SIZE, ChunkManager, SolidStructure, Structure, StructureManager, get_neighbors,
+    is_tile_passable, tile_pos_to_rounded_tile, world_pos_to_tile,
 };
 use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
@@ -45,38 +46,9 @@ impl Eq for PathNode {}
 
 // ========== FONCTIONS UTILITAIRES ==========
 
-/// Convertit une position logique (en tuiles) en position de grille pour A*.
-pub fn tile_to_grid_pos(tile_pos: Vec2) -> IVec2 {
-    IVec2 {
-        x: tile_pos.x.floor() as i32,
-        y: tile_pos.y.floor() as i32,
-    }
-}
-
 /// Convertit une position de grille A* en position logique (centre de la tuile).
 pub fn grid_to_tile_pos(grid_pos: IVec2) -> Vec2 {
     Vec2::new(grid_pos.x as f32 + 0.5, grid_pos.y as f32 + 0.5)
-}
-
-/// Convertit une position globale de tuile en position de chunk.
-pub fn global_tile_to_chunk_pos(tile_pos: IVec2) -> IVec2 {
-    let chunk_size = CHUNK_SIZE.as_ivec2();
-    IVec2::new(
-        (tile_pos.x as f32 / chunk_size.x as f32).floor() as i32,
-        (tile_pos.y as f32 / chunk_size.y as f32).floor() as i32,
-    )
-}
-
-/// Convertit une position globale de tuile en position locale dans son chunk.
-pub fn global_to_local_tile_pos(tile_pos: IVec2) -> TilePos {
-    let chunk_pos = global_tile_to_chunk_pos(tile_pos);
-    let chunk_size = CHUNK_SIZE.as_ivec2();
-    let local_x = tile_pos.x - chunk_pos.x * chunk_size.x;
-    let local_y = tile_pos.y - chunk_pos.y * chunk_size.y;
-    TilePos {
-        x: local_x as u32,
-        y: local_y as u32,
-    }
 }
 
 // ========== PATHFINDING UTILISANT DIRECTEMENT VOTRE TILEMAP ==========
@@ -85,23 +57,11 @@ pub fn global_to_local_tile_pos(tile_pos: IVec2) -> TilePos {
 pub struct PathfindingAgent {
     pub target: Option<Vec2>,
     pub path: VecDeque<Vec2>,
-    // pub current_path_index: usize,
     pub speed: f32,
     pub path_tolerance: f32,
 }
 
 /// checks if there is a structure at rounded_tile_pos
-pub fn is_tile_passable(
-    rounded_tile_pos: IVec2,
-    structure_manager: &Res<StructureManager>,
-) -> bool {
-    if let Some(_structure_entity) = structure_manager.structures.get(&rounded_tile_pos) {
-        return false;
-    }
-    // Si le chunk n'existe pas, on suppose qu'il n'y a pas de mur.
-    // TODO: change that or spawn the chunk
-    true
-}
 
 fn is_diagonal(from: IVec2, to: IVec2) -> bool {
     (from.x - to.x).abs() == 1 && (from.y - to.y).abs() == 1
@@ -111,16 +71,6 @@ fn heuristic(a: IVec2, b: IVec2) -> f32 {
     let dx = (a.x - b.x) as f32;
     let dy = (a.y - b.y) as f32;
     (dx * dx + dy * dy).sqrt()
-}
-
-pub fn get_neighbors(pos: IVec2) -> impl Iterator<Item = IVec2> {
-    (-1..=1)
-        .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
-        .filter(|&(x, y)| x != 0 || y != 0)
-        .map(move |(dx, dy)| IVec2 {
-            x: pos.x + dx,
-            y: pos.y + dy,
-        })
 }
 
 fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) -> VecDeque<Vec2> {
@@ -141,8 +91,8 @@ fn find_path(
     end_pos: Vec2,
     structure_manager: &Res<StructureManager>,
 ) -> Option<VecDeque<Vec2>> {
-    let start_grid = tile_to_grid_pos(start_pos);
-    let end_grid = tile_to_grid_pos(end_pos);
+    let start_grid = tile_pos_to_rounded_tile(start_pos);
+    let end_grid = tile_pos_to_rounded_tile(end_pos);
 
     if !is_tile_passable(end_grid, structure_manager) {
         return None;

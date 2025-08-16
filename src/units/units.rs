@@ -1,17 +1,12 @@
 use crate::{
     UpsCounter,
     map::{
-        SolidStructure, StructureManager, TILE_SIZE, rounded_tile_pos_to_world,
-        world_pos_to_rounded_tile, world_pos_to_tile,
+        StructureManager, TILE_SIZE, get_neighbors, is_tile_passable, rounded_tile_pos_to_world,
+        world_pos_to_rounded_tile,
     },
-    pathfinding::{get_neighbors, is_tile_passable, tile_to_grid_pos},
-    units::{
-        states::Available,
-        tasks::{CurrentTask, TaskQueue},
-    },
+    units::tasks::CurrentTask,
 };
 use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
 
 pub const UNIT_REACH: f32 = 1.0;
 

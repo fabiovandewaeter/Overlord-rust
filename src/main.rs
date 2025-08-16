@@ -1,7 +1,8 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
     map::{
-        Chest, MapPlugin, SolidStructure, TILE_SIZE, rounded_tile_pos_to_world, tile_pos_to_world,
+        Chest, ChunkManager, MapPlugin, SolidStructure, Structure, StructureKind, StructureManager,
+        TILE_SIZE, place_structure, rounded_tile_pos_to_world, tile_pos_to_world,
     },
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
@@ -66,6 +67,8 @@ fn setup(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
+    mut structure_manager: ResMut<StructureManager>,
+    chunk_manager: Res<ChunkManager>,
 ) {
     use bevy::color::palettes::css::GREEN;
     commands.spawn((Camera2d, Camera { ..default() }));
@@ -106,6 +109,26 @@ fn setup(
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
     ));
+
+    let chest_entity = commands
+        .spawn((
+            Sprite::from_image(asset_server.load("structures/chest.png")),
+            Inventory::new(),
+            Structure {
+                kind: StructureKind::Chest,
+            },
+        ))
+        .id();
+
+    let rounded_tile_pos = IVec2::new(5, 5);
+
+    place_structure(
+        &mut commands,
+        &chest_entity,
+        &mut structure_manager,
+        &chunk_manager,
+        rounded_tile_pos,
+    );
 }
 
 fn handle_camera_inputs(

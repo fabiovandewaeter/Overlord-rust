@@ -110,14 +110,22 @@ pub fn spawn_chunk(
     // Spawn les structures APRÈS avoir configuré le tilemap
     // et les attache directement au tilemap
     for rounded_tile_pos in structures_to_spawn {
+        let wall_entity = commands
+            .spawn((
+                Sprite::from_image(asset_server.load("structures/wall.png")),
+                Structure {
+                    kind: StructureKind::Wall,
+                },
+            ))
+            .id();
+
         spawn_structure_in_chunk(
             commands,
-            asset_server,
-            structure_manager,
+            &wall_entity,
+            &mut structure_manager,
             tilemap_entity,
             rounded_tile_pos,
             tilemap_world_pos,
-            StructureKind::Wall,
         );
     }
 
@@ -126,12 +134,11 @@ pub fn spawn_chunk(
 
 fn spawn_structure_in_chunk(
     commands: &mut Commands,
-    asset_server: &AssetServer,
+    structure_entity: &Entity,
     structure_manager: &mut ResMut<StructureManager>,
     tilemap_entity: Entity,
     rounded_tile_pos: IVec2,
     tilemap_world_pos: Vec2,
-    structure_kind: StructureKind,
 ) {
     // Calcule la position absolue de la structure
     let structure_world_pos = rounded_tile_pos_to_world(rounded_tile_pos);
@@ -145,78 +152,80 @@ fn spawn_structure_in_chunk(
         STRUCTURE_LAYER_LEVEL - TILE_LAYER_LEVEL, // Z relatif
     ));
 
-    let texture_path = match structure_kind {
-        StructureKind::Wall => "tiles/stone.png",
-        StructureKind::Chest => "tiles/chest.png", // par exemple
-    };
-
-    let structure_entity = commands
-        .spawn((
-            Sprite::from_image(asset_server.load(texture_path)),
-            transform,
-            Structure {
-                kind: structure_kind,
-            },
-        ))
-        .id();
+    commands.entity(*structure_entity).insert(transform);
 
     // Attache la structure au tilemap, pas à une tile individuelle
-    commands.entity(tilemap_entity).add_child(structure_entity);
+    commands.entity(tilemap_entity).add_child(*structure_entity);
 
     // Enregistre la structure dans le manager
     structure_manager
         .structures
-        .insert(rounded_tile_pos, structure_entity);
-
-    println!(
-        "Structure créée à {:?} (relative: {:?})",
-        rounded_tile_pos, relative_pos
-    );
+        .insert(rounded_tile_pos, *structure_entity);
 }
 
-// Version mise à jour de place_structure pour être cohérente
+// add transform to structure_entity and add it to structure_manager
 pub fn place_structure(
-    mut commands: Commands,
-    mut structure_manager: ResMut<StructureManager>,
-    chunk_manager: Res<ChunkManager>,
+    mut commands: &mut Commands,
+    structure_entity: &Entity,
+    mut structure_manager: &mut ResMut<StructureManager>,
+    chunk_manager: &Res<ChunkManager>,
     rounded_tile_pos: IVec2,
-    kind: StructureKind,
-    asset_server: Res<AssetServer>,
 ) {
-    let rounded_chunk_pos = rounded_tile_pos_to_rounded_chunk_pos(rounded_tile_pos);
+    let rounded_chunk_pos = rounded_tile_pos_to_rounded_chunk(rounded_tile_pos);
 
     // Trouve le tilemap correspondant
     if let Some(&tilemap_entity) = chunk_manager.spawned_chunks.get(&rounded_chunk_pos) {
         // Structure attachée au tilemap existant
-        let tilemap_world_pos =
-            rounded_tile_pos_to_world(rounded_chunk_pos_to_rounded_tile(&rounded_chunk_pos));
+        let tilemap_world_pos = rounded_tile_pos_to_world(rounded_tile_pos);
 
         spawn_structure_in_chunk(
             &mut commands,
-            &asset_server,
+            &structure_entity,
             &mut structure_manager,
             tilemap_entity,
             rounded_tile_pos,
             tilemap_world_pos,
-            kind,
         );
     } else {
         // TODO: make sure it works as intended
         // Si le chunk n'existe pas encore, crée une structure indépendante
         // (sera attachée plus tard quand le chunk sera créé)
-        let structure_entity = commands
-            .spawn((
-                Structure { kind },
-                Transform::from_translation(
-                    rounded_tile_pos_to_world(rounded_tile_pos).extend(STRUCTURE_LAYER_LEVEL),
-                ),
-            ))
-            .id();
+
+        // let structure_entity = commands
+        //     .spawn((
+        //         Structure { kind },
+        //         Transform::from_translation(
+        //             rounded_tile_pos_to_world(rounded_tile_pos).extend(STRUCTURE_LAYER_LEVEL),
+        //         ),
+        //     ))
+        //     .id();
 
         structure_manager
             .structures
-            .insert(rounded_tile_pos, structure_entity);
+            .insert(rounded_tile_pos, *structure_entity);
     }
+}
+
+pub fn get_neighbors(pos: IVec2) -> impl Iterator<Item = IVec2> {
+    (-1..=1)
+        .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
+        .filter(|&(x, y)| x != 0 || y != 0)
+        .map(move |(dx, dy)| IVec2 {
+            x: pos.x + dx,
+            y: pos.y + dy,
+        })
+}
+
+pub fn is_tile_passable(
+    rounded_tile_pos: IVec2,
+    structure_manager: &Res<StructureManager>,
+) -> bool {
+    if let Some(_structure_entity) = structure_manager.structures.get(&rounded_tile_pos) {
+        return false;
+    }
+    // Si le chunk n'existe pas, on suppose qu'il n'y a pas de mur.
+    // TODO: change that or spawn the chunk
+    true
 }
 
 // ========= coordinates conversion =========
@@ -261,10 +270,14 @@ pub fn world_pos_to_rounded_tile(world_pos: Vec2) -> IVec2 {
 }
 
 /// Convertit une position monde (pixels) en position de chunk.
-pub fn world_pos_to_rounded_chunk_pos(world_pos: &Vec2) -> IVec2 {
-    let chunk_size_pixels = CHUNK_SIZE.as_vec2() * Vec2::new(TILE_SIZE.x, TILE_SIZE.y);
-    let pos = *world_pos / chunk_size_pixels;
-    IVec2::new(pos.x.floor() as i32, pos.y.floor() as i32)
+pub fn world_pos_to_rounded_chunk(world_pos: &Vec2) -> IVec2 {
+    // let chunk_size_pixels = CHUNK_SIZE.as_vec2() * Vec2::new(TILE_SIZE.x, TILE_SIZE.y);
+    // let pos = *world_pos / chunk_size_pixels;
+    // IVec2::new(pos.x.floor() as i32, pos.y.floor() as i32)
+    IVec2::new(
+        (world_pos.x / (CHUNK_SIZE.x as f32 * TILE_SIZE.x)).floor() as i32,
+        (world_pos.y / (CHUNK_SIZE.y as f32 * TILE_SIZE.y)).floor() as i32,
+    )
 }
 
 pub fn rounded_chunk_pos_to_rounded_tile(rounded_chunk_pos: &IVec2) -> IVec2 {
@@ -274,14 +287,14 @@ pub fn rounded_chunk_pos_to_rounded_tile(rounded_chunk_pos: &IVec2) -> IVec2 {
     )
 }
 
-pub fn rounded_tile_pos_to_rounded_chunk_pos(rounded_tile_pos: IVec2) -> IVec2 {
+pub fn rounded_tile_pos_to_rounded_chunk(rounded_tile_pos: IVec2) -> IVec2 {
     IVec2::new(
         rounded_tile_pos.x / CHUNK_SIZE.x as i32,
         rounded_tile_pos.y / CHUNK_SIZE.y as i32,
     )
 }
 
-pub fn tile_pos_to_rounded_chunk_pos(tile_pos: Vec2) -> IVec2 {
+pub fn tile_pos_to_rounded_chunk(tile_pos: Vec2) -> IVec2 {
     IVec2::new(
         (tile_pos.x / CHUNK_SIZE.x as f32).floor() as i32,
         (tile_pos.y / CHUNK_SIZE.y as f32).floor() as i32,
@@ -304,7 +317,7 @@ fn spawn_chunks_around_camera(
     mut structure_manager: ResMut<StructureManager>,
 ) {
     for transform in camera_query.iter() {
-        let camera_chunk_pos = world_pos_to_rounded_chunk_pos(&transform.translation.xy());
+        let camera_chunk_pos = world_pos_to_rounded_chunk(&transform.translation.xy());
         for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
             for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
                 let chunk_pos = IVec2::new(x, y);
