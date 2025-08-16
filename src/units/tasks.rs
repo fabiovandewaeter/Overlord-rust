@@ -3,7 +3,7 @@ use std::{cmp::min, collections::VecDeque};
 
 use crate::{
     items::{Inventory, ItemKind},
-    map::{Chest, world_coords_to_tile},
+    map::{Chest, world_pos_to_tile},
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units, states::Available, update_logic},
 };
@@ -67,10 +67,9 @@ pub fn process_current_task(
                 } => {
                     if let Ok((transform, mut source_inventory)) = chest_query.get_mut(*from) {
                         // checks if the target is at reach
-                        let current_target_tile_pos =
-                            world_coords_to_tile(transform.translation.xy());
+                        let current_target_tile_pos = world_pos_to_tile(transform.translation.xy());
                         let current_unit_tile_pos =
-                            world_coords_to_tile(unit_transform.translation.xy());
+                            world_pos_to_tile(unit_transform.translation.xy());
                         let distance = current_target_tile_pos.distance(current_unit_tile_pos);
                         if distance > UNIT_REACH {
                             current_task.0 = None;
@@ -108,7 +107,7 @@ fn find_best_chest(
     let mut best_any: Option<(Entity, Vec2, u32, f32)> = None; // nearest with at least 1
 
     for (chest_ent, chest_transform, chest_inv) in chest_query.iter() {
-        let chest_tile = world_coords_to_tile(chest_transform.translation.xy());
+        let chest_tile = world_pos_to_tile(chest_transform.translation.xy());
         let dist = unit_tile_pos.distance(chest_tile);
         let available = chest_inv.count(&desired_item_kind);
 
@@ -156,7 +155,7 @@ fn add_move_to_then_take_rocks_from_chest_task(
     for (unit_entity, unit_transform, mut pathfinding_agent, mut task_queue) in
         unit_query.iter_mut()
     {
-        let unit_tile_pos = world_coords_to_tile(unit_transform.translation.xy());
+        let unit_tile_pos = world_pos_to_tile(unit_transform.translation.xy());
 
         if let Some((chest_entity, chest_tile_pos, available_quantity)) =
             find_best_chest(unit_tile_pos, DESIRED_QUANTITY, DESIRED_KIND, &chest_query)

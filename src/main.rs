@@ -1,6 +1,6 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
-    map::{Chest, MapPlugin, SolidStructure, TILE_SIZE, tile_coords_to_world},
+    map::{Chest, MapPlugin, SolidStructure, TILE_SIZE, tile_pos_to_world},
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
         CircularCollider, DesiredMovement, Unit, display_units_with_no_current_task,
@@ -71,7 +71,7 @@ fn setup(
     for _i in 0..1 {
         let random_number: i32 = 5;
 
-        let world_pos = tile_coords_to_world(Vec2::new(0.5, 0.5));
+        let world_pos = tile_pos_to_world(Vec2::new(0.5, 0.5));
 
         // unit
         commands.spawn((
@@ -99,7 +99,7 @@ fn setup(
     }
 
     // chest
-    let world_pos = tile_coords_to_world(Vec2::new(5.5, 0.5));
+    let world_pos = tile_pos_to_world(Vec2::new(5.5, 0.5));
     let mut inventory = Inventory::new();
     inventory.add(ItemKind::Rock, 1000);
     commands.spawn((
@@ -112,7 +112,7 @@ fn setup(
 
     commands.spawn((Camera2d, Camera { ..default() }));
     commands.spawn((
-        Mesh2d(meshes.add(Rectangle::new(40.0, 20.0))),
+        Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
     ));
 }

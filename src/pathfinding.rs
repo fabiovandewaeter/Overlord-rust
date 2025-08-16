@@ -1,4 +1,4 @@
-use crate::map::{self, CHUNK_SIZE, ChunkManager, SolidStructure, world_coords_to_tile};
+use crate::map::{self, CHUNK_SIZE, ChunkManager, SolidStructure, world_pos_to_tile};
 use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
@@ -285,8 +285,8 @@ pub fn pathfinding_system(
 ) {
     for (mut agent, transform) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
-            // Convert transform -> tile coords once
-            let start_tile = world_coords_to_tile(transform.translation.xy());
+            // Convert transform -> tile pos once
+            let start_tile = world_pos_to_tile(transform.translation.xy());
             // Recalculer le chemin si la cible a changé (chemin vide)
             if agent.path.is_empty() {
                 if let Some(new_path) = find_path(
@@ -314,7 +314,7 @@ pub fn movement_system(
 ) {
     for (mut agent, mut transform, mut current_task) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
-            let current_tile_pos = world_coords_to_tile(transform.translation.xy());
+            let current_tile_pos = world_pos_to_tile(transform.translation.xy());
             let distance = current_tile_pos.distance(next_waypoint);
 
             if distance <= agent.path_tolerance {

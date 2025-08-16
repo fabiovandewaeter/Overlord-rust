@@ -84,13 +84,13 @@ pub fn spawn_chunk(
 }
 
 // Conversion coordonnées logiques -> monde
-pub fn tile_coords_to_world(tile_coords: Vec2) -> Vec2 {
-    Vec2::new(tile_coords.x * TILE_SIZE.x, tile_coords.y * TILE_SIZE.y)
+pub fn tile_pos_to_world(tile_pos: Vec2) -> Vec2 {
+    Vec2::new(tile_pos.x * TILE_SIZE.x, tile_pos.y * TILE_SIZE.y)
 }
 
 // Conversion monde -> coordonnées logiques
-pub fn world_coords_to_tile(world_coords: Vec2) -> Vec2 {
-    Vec2::new(world_coords.x / TILE_SIZE.x, world_coords.y / TILE_SIZE.y)
+pub fn world_pos_to_tile(world_pos: Vec2) -> Vec2 {
+    Vec2::new(world_pos.x / TILE_SIZE.x, world_pos.y / TILE_SIZE.y)
 }
 
 /// Convertit une position monde (pixels) en position de chunk.
