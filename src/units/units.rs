@@ -1,6 +1,10 @@
 use crate::{
     UpsCounter,
-    map::{SolidStructure, TILE_SIZE},
+    map::{
+        SolidStructure, StructureManager, TILE_SIZE, rounded_tile_pos_to_world,
+        world_pos_to_rounded_tile, world_pos_to_tile,
+    },
+    pathfinding::{get_neighbors, is_tile_passable, tile_to_grid_pos},
     units::{
         states::Available,
         tasks::{CurrentTask, TaskQueue},
@@ -105,47 +109,36 @@ pub fn update_logic(
 
 /// Déplace les unités et gère les collisions.
 pub fn move_and_collide_units(
+    structure_manager: Res<StructureManager>,
     mut unit_query: Query<(&mut Transform, &DesiredMovement, &CircularCollider), With<Unit>>,
-    wall_query: Query<(&TilePos, &TilemapId), (With<SolidStructure>, Without<Unit>)>,
-    tilemap_q: Query<(&TilemapGridSize, &Transform), (With<TileStorage>, Without<Unit>)>,
 ) {
-    // 1) MOUVEMENT DES UNITÉS
     for (mut transform, desired_movement, collider) in unit_query.iter_mut() {
-        // 2) GESTION DES COLLISIONS UNIT-MUR
         let proposed_position = transform.translation + desired_movement.0;
         let mut final_position = proposed_position;
 
-        // Vérifier les collisions avec tous les murs
-        for (wall_tile_pos, wall_tilemap_id) in wall_query.iter() {
-            // Trouver la tilemap correspondante
-            if let Ok((grid_size, tilemap_transform)) = tilemap_q.get(wall_tilemap_id.0) {
-                // Calculer la position monde du mur
-                let tile_world_pos = Vec2::new(
-                    tilemap_transform.translation.x + wall_tile_pos.x as f32 * grid_size.x,
-                    tilemap_transform.translation.y + wall_tile_pos.y as f32 * grid_size.y,
-                );
+        // Convertir en position tuile et obtenir les tuiles voisines
+        let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+        let neighbor_tiles = get_neighbors(current_tile_pos);
 
-                let tile_size = Vec2::new(grid_size.x, grid_size.y);
-                // Convertir le rayon de collision de tiles en pixels
+        // Vérifier les collisions avec les structures voisines
+        for tile_pos in neighbor_tiles {
+            if !is_tile_passable(tile_pos, &structure_manager) {
+                let tile_world_center = rounded_tile_pos_to_world(tile_pos);
                 let collider_radius_pixels = collider.radius * TILE_SIZE.x;
 
-                // Vérifier la collision cercle-rectangle
-                if let Some(resolution_vector) = circle_rect_collision(
-                    Vec2::new(proposed_position.x, proposed_position.y),
+                if let Some(resolution) = circle_rect_collision(
+                    proposed_position.xy(),
                     collider_radius_pixels,
-                    tile_world_pos,
-                    tile_size,
+                    tile_world_center,
+                    TILE_SIZE.into(),
                 ) {
-                    // Il y a collision, ajuster la position
-                    final_position.x += resolution_vector.x;
-                    final_position.y += resolution_vector.y;
+                    // Ajuster la position en cas de collision
+                    final_position.x += resolution.x;
+                    final_position.y += resolution.y;
                 }
             }
         }
 
-        //TODO: modifier pour éviter de faire la logique en pixels, et faire la convertions en pixels à la fin
-
-        // Appliquer la position finale
         transform.translation = final_position;
     }
 }
@@ -195,5 +188,4 @@ pub fn display_units_with_no_current_task(unit_query: Query<&CurrentTask, With<U
         }
     }
     println!("Counter units with no current task: {}", counter);
-    // println!("Counter available units : {}", counter);
 }

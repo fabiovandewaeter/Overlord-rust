@@ -1,4 +1,6 @@
-use crate::map::{self, CHUNK_SIZE, ChunkManager, SolidStructure, world_pos_to_tile};
+use crate::map::{
+    self, CHUNK_SIZE, ChunkManager, SolidStructure, Structure, StructureManager, world_pos_to_tile,
+};
 use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
@@ -8,18 +10,12 @@ use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 pub struct PathfindingPlugin;
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-struct GridPos {
-    x: i32,
-    y: i32,
-}
-
 #[derive(Clone)]
 struct PathNode {
-    pos: GridPos,
+    pos: IVec2,
     g_cost: f32,
     h_cost: f32,
-    parent: Option<GridPos>,
+    parent: Option<IVec2>,
 }
 
 impl PathNode {
@@ -50,20 +46,20 @@ impl Eq for PathNode {}
 // ========== FONCTIONS UTILITAIRES ==========
 
 /// Convertit une position logique (en tuiles) en position de grille pour A*.
-fn tile_to_grid_pos(tile_pos: Vec2) -> GridPos {
-    GridPos {
+pub fn tile_to_grid_pos(tile_pos: Vec2) -> IVec2 {
+    IVec2 {
         x: tile_pos.x.floor() as i32,
         y: tile_pos.y.floor() as i32,
     }
 }
 
 /// Convertit une position de grille A* en position logique (centre de la tuile).
-fn grid_to_tile_pos(grid_pos: GridPos) -> Vec2 {
+pub fn grid_to_tile_pos(grid_pos: IVec2) -> Vec2 {
     Vec2::new(grid_pos.x as f32 + 0.5, grid_pos.y as f32 + 0.5)
 }
 
 /// Convertit une position globale de tuile en position de chunk.
-fn global_tile_to_chunk_pos(tile_pos: GridPos) -> IVec2 {
+pub fn global_tile_to_chunk_pos(tile_pos: IVec2) -> IVec2 {
     let chunk_size = CHUNK_SIZE.as_ivec2();
     IVec2::new(
         (tile_pos.x as f32 / chunk_size.x as f32).floor() as i32,
@@ -72,7 +68,7 @@ fn global_tile_to_chunk_pos(tile_pos: GridPos) -> IVec2 {
 }
 
 /// Convertit une position globale de tuile en position locale dans son chunk.
-fn global_to_local_tile_pos(tile_pos: GridPos) -> TilePos {
+pub fn global_to_local_tile_pos(tile_pos: IVec2) -> TilePos {
     let chunk_pos = global_tile_to_chunk_pos(tile_pos);
     let chunk_size = CHUNK_SIZE.as_ivec2();
     let local_x = tile_pos.x - chunk_pos.x * chunk_size.x;
@@ -94,50 +90,40 @@ pub struct PathfindingAgent {
     pub path_tolerance: f32,
 }
 
-/// Vérifie si une tuile est passable (n'est pas un mur).
-fn is_tile_passable(
-    tile_pos: GridPos,
-    chunk_manager: &Res<ChunkManager>,
-    tile_storage_query: &Query<&TileStorage>,
-    wall_query: &Query<(), With<SolidStructure>>,
+/// checks if there is a structure at rounded_tile_pos
+pub fn is_tile_passable(
+    rounded_tile_pos: IVec2,
+    structure_manager: &Res<StructureManager>,
 ) -> bool {
-    let chunk_pos = global_tile_to_chunk_pos(tile_pos);
-    if let Some(chunk_entity) = chunk_manager.spawned_chunks.get(&chunk_pos) {
-        if let Ok(tile_storage) = tile_storage_query.get(*chunk_entity) {
-            let local_tile_pos = global_to_local_tile_pos(tile_pos);
-            if let Some(tile_entity) = tile_storage.get(&local_tile_pos) {
-                return wall_query.get(tile_entity).is_err(); // Passable si ce n'est PAS un mur.
-            }
-        }
+    if let Some(_structure_entity) = structure_manager.structures.get(&rounded_tile_pos) {
+        return false;
     }
     // Si le chunk n'existe pas, on suppose qu'il n'y a pas de mur.
+    // TODO: change that or spawn the chunk
     true
 }
 
-fn is_diagonal(from: GridPos, to: GridPos) -> bool {
+fn is_diagonal(from: IVec2, to: IVec2) -> bool {
     (from.x - to.x).abs() == 1 && (from.y - to.y).abs() == 1
 }
 
-fn heuristic(a: GridPos, b: GridPos) -> f32 {
+fn heuristic(a: IVec2, b: IVec2) -> f32 {
     let dx = (a.x - b.x) as f32;
     let dy = (a.y - b.y) as f32;
     (dx * dx + dy * dy).sqrt()
 }
 
-fn get_neighbors(pos: GridPos) -> impl Iterator<Item = GridPos> {
+pub fn get_neighbors(pos: IVec2) -> impl Iterator<Item = IVec2> {
     (-1..=1)
         .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
         .filter(|&(x, y)| x != 0 || y != 0)
-        .map(move |(dx, dy)| GridPos {
+        .map(move |(dx, dy)| IVec2 {
             x: pos.x + dx,
             y: pos.y + dy,
         })
 }
 
-fn reconstruct_path(
-    all_nodes: &HashMap<GridPos, PathNode>,
-    mut current: GridPos,
-) -> VecDeque<Vec2> {
+fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) -> VecDeque<Vec2> {
     let mut path = VecDeque::new();
     while let Some(node) = all_nodes.get(&current) {
         path.push_front(grid_to_tile_pos(node.pos));
@@ -153,14 +139,12 @@ fn reconstruct_path(
 fn find_path(
     start_pos: Vec2,
     end_pos: Vec2,
-    chunk_manager: &Res<ChunkManager>,
-    tile_storage_query: &Query<&TileStorage>,
-    wall_query: &Query<(), With<SolidStructure>>,
+    structure_manager: &Res<StructureManager>,
 ) -> Option<VecDeque<Vec2>> {
     let start_grid = tile_to_grid_pos(start_pos);
     let end_grid = tile_to_grid_pos(end_pos);
 
-    if !is_tile_passable(end_grid, chunk_manager, tile_storage_query, wall_query) {
+    if !is_tile_passable(end_grid, structure_manager) {
         return None;
     }
 
@@ -187,7 +171,7 @@ fn find_path(
     // A* habituel
     // -------------------------
     let mut open_set = BinaryHeap::new();
-    let mut all_nodes: HashMap<GridPos, PathNode> = HashMap::new();
+    let mut all_nodes: HashMap<IVec2, PathNode> = HashMap::new();
 
     let start_node = PathNode {
         pos: start_grid,
@@ -225,23 +209,23 @@ fn find_path(
 
         for neighbor_pos in get_neighbors(current_node.pos) {
             if is_diagonal(current_node.pos, neighbor_pos) {
-                let corner_1 = GridPos {
+                let corner_1 = IVec2 {
                     x: current_node.pos.x,
                     y: neighbor_pos.y,
                 };
-                let corner_2 = GridPos {
+                let corner_2 = IVec2 {
                     x: neighbor_pos.x,
                     y: current_node.pos.y,
                 };
 
-                if !is_tile_passable(corner_1, chunk_manager, tile_storage_query, wall_query)
-                    || !is_tile_passable(corner_2, chunk_manager, tile_storage_query, wall_query)
+                if !is_tile_passable(corner_1, structure_manager)
+                    || !is_tile_passable(corner_2, structure_manager)
                 {
                     continue;
                 }
             }
 
-            if !is_tile_passable(neighbor_pos, chunk_manager, tile_storage_query, wall_query) {
+            if !is_tile_passable(neighbor_pos, structure_manager) {
                 continue;
             }
 
@@ -279,9 +263,7 @@ fn find_path(
 /// Système qui calcule le chemin pour les agents.
 pub fn pathfinding_system(
     mut agents_query: Query<(&mut PathfindingAgent, &Transform)>,
-    chunk_manager: Res<ChunkManager>,
-    tile_storage_query: Query<&TileStorage>,
-    wall_query: Query<(), With<SolidStructure>>,
+    structure_manager: Res<StructureManager>,
 ) {
     for (mut agent, transform) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
@@ -289,13 +271,7 @@ pub fn pathfinding_system(
             let start_tile = world_pos_to_tile(transform.translation.xy());
             // Recalculer le chemin si la cible a changé (chemin vide)
             if agent.path.is_empty() {
-                if let Some(new_path) = find_path(
-                    start_tile,
-                    target,
-                    &chunk_manager,
-                    &tile_storage_query,
-                    &wall_query,
-                ) {
+                if let Some(new_path) = find_path(start_tile, target, &structure_manager) {
                     agent.path = new_path;
                 } else {
                     // Impossible de trouver un chemin, on annule la cible.
@@ -308,7 +284,6 @@ pub fn pathfinding_system(
 
 /// makes the entiry moves along the path ; sets CurrentTask.0 to None when reached target
 pub fn movement_system(
-    // mut commands: Commands,
     mut agents_query: Query<(&mut PathfindingAgent, &mut Transform, &mut CurrentTask)>,
     time: Res<Time>,
 ) {
@@ -360,11 +335,7 @@ fn mouse_target_system(
 
     if let Some(cursor_pos) = window.cursor_position() {
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
-            // CHANGEMENT: On convertit la position monde (pixels) en position tuile UNE SEULE FOIS ICI.
-            let tile_pos = Vec2::new(
-                world_pos.x / map::TILE_SIZE.x,
-                world_pos.y / map::TILE_SIZE.y,
-            );
+            let tile_pos = world_pos_to_tile(world_pos);
             for mut agent in agents_query.iter_mut() {
                 agent.target = Some(tile_pos);
                 agent.path.clear(); // Force le recalcul du chemin

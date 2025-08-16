@@ -1,6 +1,8 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
-    map::{Chest, MapPlugin, SolidStructure, TILE_SIZE, tile_pos_to_world},
+    map::{
+        Chest, MapPlugin, SolidStructure, TILE_SIZE, rounded_tile_pos_to_world, tile_pos_to_world,
+    },
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
         CircularCollider, DesiredMovement, Unit, display_units_with_no_current_task,
@@ -66,17 +68,19 @@ fn setup(
     asset_server: Res<AssetServer>,
 ) {
     use bevy::color::palettes::css::GREEN;
+    commands.spawn((Camera2d, Camera { ..default() }));
 
     let player_texture_handle = asset_server.load("default.png");
     for _i in 0..1 {
         let random_number: i32 = 5;
 
-        let world_pos = tile_pos_to_world(Vec2::new(0.5, 0.5));
+        // let world_pos = tile_pos_to_world(Vec2::new(0.5, 0.5));
+        let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // unit
         commands.spawn((
             Sprite::from_image(player_texture_handle.clone()),
-            Transform::from_translation(world_pos.extend(1.0)),
+            Transform::from_translation(world_pos.extend(0.0)),
             DesiredMovement::default(),
             Unit {
                 movement_speed: random_number as f32,
@@ -98,19 +102,6 @@ fn setup(
         ));
     }
 
-    // chest
-    let world_pos = tile_pos_to_world(Vec2::new(5.5, 0.5));
-    let mut inventory = Inventory::new();
-    inventory.add(ItemKind::Rock, 1000);
-    commands.spawn((
-        Transform::from_translation(world_pos.extend(1.0)),
-        SolidStructure,
-        // Inventory::new(),
-        inventory,
-        Chest,
-    ));
-
-    commands.spawn((Camera2d, Camera { ..default() }));
     commands.spawn((
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
