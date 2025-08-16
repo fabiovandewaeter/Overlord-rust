@@ -147,12 +147,15 @@ fn find_best_chest(
 }
 
 fn add_move_to_then_take_rocks_from_chest_task(
-    mut unit_query: Query<(&Transform, &mut PathfindingAgent, &mut TaskQueue), With<Unit>>,
+    mut commands: Commands,
+    mut unit_query: Query<(Entity, &Transform, &mut PathfindingAgent, &mut TaskQueue), With<Unit>>,
     chest_query: Query<(Entity, &Transform, &mut Inventory), (With<Chest>, Without<Unit>)>,
 ) {
     const DESIRED_QUANTITY: u32 = 10;
     const DESIRED_KIND: ItemKind = ItemKind::Rock;
-    for (unit_transform, mut pathfinding_agent, mut task_queue) in unit_query.iter_mut() {
+    for (unit_entity, unit_transform, mut pathfinding_agent, mut task_queue) in
+        unit_query.iter_mut()
+    {
         let unit_tile_pos = world_coords_to_tile(unit_transform.translation.xy());
 
         if let Some((chest_entity, chest_tile_pos, available_quantity)) =
@@ -169,6 +172,12 @@ fn add_move_to_then_take_rocks_from_chest_task(
             // reset pathfingin_agent
             pathfinding_agent.target = Some(chest_tile_pos);
             pathfinding_agent.path.clear();
+
+            commands.entity(unit_entity).remove::<Available>();
+            println!(
+                "OUI chest found {:?} {:?} {:?}",
+                chest_entity, chest_tile_pos, available_quantity
+            );
         } else {
             println!("no chest found");
         }

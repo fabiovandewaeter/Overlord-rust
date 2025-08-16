@@ -187,14 +187,13 @@ pub fn unit_unit_collisions(
     }
 }
 
-pub fn display_available_units(
-    unit_query: Query<(&TaskQueue, &CurrentTask), (With<Available>, With<Unit>)>,
-) {
+pub fn display_units_with_no_current_task(unit_query: Query<&CurrentTask, With<Unit>>) {
     let mut counter = 0;
-    for (_task_queue, current_task) in unit_query.iter() {
+    for current_task in unit_query.iter() {
         if current_task.0.is_none() {
             counter += 1;
         }
     }
-    println!("Counter available units : {}", counter);
+    println!("Counter units with no current task: {}", counter);
+    // println!("Counter available units : {}", counter);
 }

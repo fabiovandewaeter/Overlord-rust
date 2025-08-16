@@ -1,9 +1,10 @@
 use crate::{
-    items::{Inventory, display_inventories},
+    items::{Inventory, ItemKind, display_inventories},
     map::{Chest, MapPlugin, SolidStructure, TILE_SIZE, tile_coords_to_world},
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
-        CircularCollider, DesiredMovement, Unit, display_available_units, move_and_collide_units,
+        CircularCollider, DesiredMovement, Unit, display_units_with_no_current_task,
+        move_and_collide_units,
         states::Available,
         tasks::{CurrentTask, TaskQueue, TasksPlugin},
         unit_unit_collisions, update_logic,
@@ -97,12 +98,15 @@ fn setup(
         ));
     }
 
-    let world_pos = tile_coords_to_world(Vec2::new(5.5, 0.5));
     // chest
+    let world_pos = tile_coords_to_world(Vec2::new(5.5, 0.5));
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 1000);
     commands.spawn((
         Transform::from_translation(world_pos.extend(1.0)),
         SolidStructure,
-        Inventory::new(),
+        // Inventory::new(),
+        inventory,
         Chest,
     ));
 
@@ -206,7 +210,7 @@ fn main() {
                 move_and_collide_units,
                 unit_unit_collisions.after(move_and_collide_units),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                display_available_units.run_if(on_timer(Duration::from_secs(1))),
+                display_units_with_no_current_task.run_if(on_timer(Duration::from_secs(1))),
             ),
         )
         .run();
