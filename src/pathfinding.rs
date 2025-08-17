@@ -311,11 +311,12 @@ pub fn movement_system(
         &mut PathfindingAgent,
         &MovementSpeed,
         &mut Transform,
-        &mut CurrentTask,
+        // &mut CurrentTask,
     )>,
     time: Res<Time>,
 ) {
-    for (mut agent, movement_speed, mut transform, mut current_task) in agents_query.iter_mut() {
+    // for (mut agent, movement_speed, mut transform, mut current_task) in agents_query.iter_mut() {
+    for (mut agent, movement_speed, mut transform) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
             let current_tile_pos = world_pos_to_tile(transform.translation.xy());
             let distance = current_tile_pos.distance(next_waypoint);
