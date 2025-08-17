@@ -39,6 +39,26 @@ pub struct CurrentTask {
     pub initialized: bool,
 }
 
+pub fn reset_tasks(
+    task_queue: &mut TaskQueue,
+    current_task: &mut CurrentTask,
+    pathfinding_agent: &mut PathfindingAgent,
+) {
+    task_queue.0.clear();
+    if let Some(task) = &current_task.task {
+        match task {
+            Task::MoveTo(_) => {
+                // resets pathfinding_agent
+                pathfinding_agent.target = None;
+                pathfinding_agent.path.clear();
+            }
+            _ => {}
+        };
+    }
+    current_task.task = None;
+    current_task.initialized = false;
+}
+
 /// pops the front of the TaskQueue to get the next CurrentTask ; add Available component if unit has no more tasks to do
 pub fn assign_next_task_or_set_available(
     mut commands: Commands,

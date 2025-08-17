@@ -3,7 +3,7 @@ use crate::map::{
     world_pos_to_tile,
 };
 use crate::units::MovementSpeed;
-use crate::units::tasks::CurrentTask;
+use crate::units::tasks::{CurrentTask, TaskQueue, reset_tasks};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
@@ -351,7 +351,7 @@ pub fn movement_system(
 
 /// Système pour définir une cible avec le clic droit de la souris.
 fn mouse_target_system(
-    mut agents_query: Query<&mut PathfindingAgent>,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut CurrentTask, &mut TaskQueue)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
 ) {
@@ -365,9 +365,15 @@ fn mouse_target_system(
     if let Some(cursor_pos) = window.cursor_position() {
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
             let tile_pos = world_pos_to_tile(world_pos);
-            for mut agent in agents_query.iter_mut() {
-                agent.target = Some(tile_pos);
-                agent.path.clear(); // Force le recalcul du chemin
+            for (mut pathfinding_agent, mut current_task, mut task_queue) in agents_query.iter_mut()
+            {
+                reset_tasks(
+                    &mut *task_queue,
+                    &mut *current_task,
+                    &mut *pathfinding_agent,
+                );
+                pathfinding_agent.target = Some(tile_pos);
+                pathfinding_agent.path.clear(); // Force le recalcul du chemin
             }
         }
     }
