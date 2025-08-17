@@ -7,6 +7,9 @@ use crate::{
 use bevy::{input::common_conditions::input_pressed, prelude::*};
 use std::{cmp::min, collections::VecDeque};
 
+// TODO: see how to remove that
+const BONUS_RANGE: f32 = 0.8;
+
 pub struct TasksPlugin;
 
 #[derive(Debug)]
@@ -130,11 +133,10 @@ pub fn process_current_task(
                     let distance = current_unit_tile_pos.distance(*target_pos);
 
                     // Si on est assez proche de la destination, considérer la tâche terminée
-                    // if distance <= 0.8 + UNIT_REACH {
-                    if pathfinding_agent.path.is_empty() && distance <= 0.8 + UNIT_REACH {
+                    if pathfinding_agent.path.is_empty() && distance <= BONUS_RANGE + UNIT_REACH {
                         // Ajustez cette valeur selon vos besoins
                         current_task.task = None;
-                        // Optionnel : arrêter le pathfinding
+                        // reset pathfinding_agent
                         pathfinding_agent.target = None;
                         pathfinding_agent.path.clear();
                     }
@@ -153,7 +155,7 @@ pub fn process_current_task(
                         let current_unit_tile_pos =
                             world_pos_to_tile(unit_transform.translation.xy());
                         let distance = current_target_tile_pos.distance(current_unit_tile_pos);
-                        if distance > 0.8 + UNIT_REACH {
+                        if distance > BONUS_RANGE + UNIT_REACH {
                             current_task.task = None;
                             continue;
                         }
@@ -182,7 +184,7 @@ pub fn process_current_task(
                         let current_unit_tile_pos =
                             world_pos_to_tile(unit_transform.translation.xy());
                         let distance = current_target_tile_pos.distance(current_unit_tile_pos);
-                        if distance > 0.8 + UNIT_REACH {
+                        if distance > BONUS_RANGE + UNIT_REACH {
                             current_task.task = None;
                             continue;
                         }
