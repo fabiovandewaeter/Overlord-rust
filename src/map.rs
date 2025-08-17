@@ -22,6 +22,12 @@ pub struct Structure;
 #[derive(Component)]
 pub struct Chest;
 
+// TODO: delete these two component and do something better
+#[derive(Component)]
+pub struct Provider;
+#[derive(Component)]
+pub struct Requester;
+
 #[derive(Component)]
 pub struct Wall;
 

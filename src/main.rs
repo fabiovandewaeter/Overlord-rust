@@ -1,12 +1,12 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
     map::{
-        Chest, ChunkManager, MapPlugin, Structure, StructureManager, TILE_SIZE, place_structure,
-        rounded_tile_pos_to_world,
+        Chest, ChunkManager, MapPlugin, Provider, Requester, Structure, StructureManager,
+        TILE_SIZE, place_structure, rounded_tile_pos_to_world,
     },
     pathfinding::PathfindingPlugin,
     units::{
-        DesiredMovement, Unit, UnitUnitCollisions, display_units_with_no_current_task,
+        DesiredMovement, Unit, display_units_inventory, display_units_with_no_current_task,
         move_and_collide_units, states::Available, tasks::TasksPlugin, unit_unit_collisions,
         update_logic,
     },
@@ -92,6 +92,8 @@ fn setup(
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
     ));
+
+    // provider chest
     let mut inventory = Inventory::new();
     inventory.add(ItemKind::Rock, 1000);
     let chest_entity = commands
@@ -101,13 +103,33 @@ fn setup(
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
             Transform::from_xyz(0.0, 0.0, 0.0),
+            Provider,
         ))
         .id();
-
-    println!("chest_entity in setup(): {:?}", chest_entity);
-
     let rounded_tile_pos = IVec2::new(5, 5);
+    place_structure(
+        &mut commands,
+        &asset_server,
+        &chest_entity,
+        &mut structure_manager,
+        &mut chunk_manager,
+        rounded_tile_pos,
+    );
 
+    // requester chest
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 0);
+    let chest_entity = commands
+        .spawn((
+            Structure,
+            Chest,
+            Sprite::from_image(asset_server.load("structures/chest.png")),
+            inventory,
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Requester,
+        ))
+        .id();
+    let rounded_tile_pos = IVec2::new(-5, 5);
     place_structure(
         &mut commands,
         &asset_server,
@@ -212,6 +234,7 @@ fn main() {
                 unit_unit_collisions.after(move_and_collide_units),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
                 display_units_with_no_current_task.run_if(on_timer(Duration::from_secs(1))),
+                display_units_inventory.run_if(on_timer(Duration::from_secs(1))),
             ),
         )
         .run();

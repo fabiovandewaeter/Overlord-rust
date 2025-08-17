@@ -225,9 +225,15 @@ pub fn unit_unit_collisions(
 pub fn display_units_with_no_current_task(unit_query: Query<&CurrentTask, With<Unit>>) {
     let mut counter = 0;
     for current_task in unit_query.iter() {
-        if current_task.0.is_none() {
+        if current_task.task.is_none() {
             counter += 1;
         }
     }
     println!("Counter units with no current task: {}", counter);
+}
+
+pub fn display_units_inventory(unit_query: Query<&Inventory>) {
+    for inventory in unit_query.iter() {
+        println!("{:?}", inventory);
+    }
 }
