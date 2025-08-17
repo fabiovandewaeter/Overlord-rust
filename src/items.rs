@@ -60,10 +60,6 @@ impl Inventory {
         *self.stackable_items.get(kind).unwrap_or(&0)
     }
 
-    pub fn has_enough_item(&self, kind: ItemKind, quantity: u32) -> bool {
-        self.stackable_items.get(&kind).unwrap_or(&0) >= &quantity
-    }
-
     pub fn add_unique_item(&mut self, item_entity: Entity) {
         self.unique_items.push(item_entity);
     }

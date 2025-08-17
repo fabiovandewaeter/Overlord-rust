@@ -1,6 +1,6 @@
 use crate::{
     items::{Inventory, ItemKind},
-    map::{Chest, Provider, Requester, TILE_SIZE, world_pos_to_tile},
+    map::{Chest, Provider, Requester, world_pos_to_tile},
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units, states::Available, update_logic},
 };
@@ -201,7 +201,6 @@ pub fn process_current_task(
                     }
                     current_task.task = None // whether it succeeds or not
                 }
-                _ => {}
             }
         }
     }
@@ -260,21 +259,22 @@ fn find_best_chest(
 
 fn add_move_to_then_take_rocks_from_chest_task(
     mut commands: Commands,
-    mut unit_query: Query<(Entity, &Transform, &mut PathfindingAgent, &mut TaskQueue), With<Unit>>,
+    mut unit_query: Query<
+        (Entity, &Transform, &mut TaskQueue),
+        (With<Unit>, With<PathfindingAgent>),
+    >,
     provider_chest_query: Query<
         (Entity, &GlobalTransform, &Inventory),
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     requester_chest_query: Query<
-        (Entity, &GlobalTransform, &Inventory),
-        (With<Chest>, With<Requester>, Without<Unit>),
+        (Entity, &GlobalTransform),
+        (With<Chest>, With<Inventory>, With<Requester>, Without<Unit>),
     >,
 ) {
     const DESIRED_QUANTITY: u32 = 10;
     const DESIRED_KIND: ItemKind = ItemKind::Rock;
-    for (unit_entity, unit_transform, mut pathfinding_agent, mut task_queue) in
-        unit_query.iter_mut()
-    {
+    for (unit_entity, unit_transform, mut task_queue) in unit_query.iter_mut() {
         let unit_tile_pos = world_pos_to_tile(unit_transform.translation.xy());
 
         if let Some((chest_entity, chest_tile_pos, available_quantity)) = find_best_chest(
@@ -285,16 +285,12 @@ fn add_move_to_then_take_rocks_from_chest_task(
         ) {
             let take_quantity = std::cmp::min(DESIRED_QUANTITY, available_quantity);
 
-            if let Ok((
-                requester_chest_entity,
-                requester_chest_global_transform,
-                requester_chest_inventory,
-            )) = requester_chest_query.single()
+            if let Ok((requester_chest_entity, requester_chest_global_transform)) =
+                requester_chest_query.single()
             {
-                // let requester_chest_pos =
-                //     world_pos_to_tile(requester_chest_global_transform.translation().xy());
-                let requester_chest_pos = Vec2::new(-5.0, 5.0);
-                // drop
+                let requester_chest_pos =
+                    world_pos_to_tile(requester_chest_global_transform.translation().xy());
+                // drop item in requester chest
                 task_queue.0.push_front(Task::Drop {
                     kind: DESIRED_KIND,
                     quantity: 10000000,
@@ -310,10 +306,6 @@ fn add_move_to_then_take_rocks_from_chest_task(
                 from: chest_entity,
             });
             task_queue.0.push_front(Task::MoveTo(chest_tile_pos));
-
-            // reset pathfingin_agent
-            // pathfinding_agent.target = Some(chest_tile_pos);
-            // pathfinding_agent.path.clear();
 
             commands.entity(unit_entity).remove::<Available>();
         } else {
