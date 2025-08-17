@@ -1,6 +1,6 @@
 use crate::{
     items::{Inventory, ItemKind},
-    map::{Chest, world_pos_to_tile},
+    map::{Chest, TILE_SIZE, world_pos_to_tile},
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units, states::Available, update_logic},
 };
@@ -58,12 +58,15 @@ pub fn process_current_task(
     for (unit_transform, mut unit_inventory, mut current_task) in unit_query.iter_mut() {
         if let Some(task) = &mut current_task.0 {
             match task {
-                // Task::MoveTo(vec2) => {}
+                Task::MoveTo(vec2) => {
+                    println!("test1");
+                }
                 Task::Take {
                     kind,
                     quantity,
                     from,
                 } => {
+                    println!("test2");
                     if let Ok((transform, mut source_inventory)) = chest_query.get_mut(*from) {
                         // checks if the target is at reach
                         let current_target_tile_pos = world_pos_to_tile(transform.translation.xy());
@@ -100,13 +103,13 @@ fn find_best_chest(
     unit_tile_pos: Vec2,
     desired_quantity: u32,
     desired_item_kind: ItemKind,
-    chest_query: &Query<(Entity, &Transform, &Inventory), (With<Chest>, Without<Unit>)>,
+    chest_query: &Query<(Entity, &GlobalTransform, &Inventory), (With<Chest>, Without<Unit>)>,
 ) -> Option<(Entity, Vec2, u32)> {
     let mut best_with_enough: Option<(Entity, Vec2, u32, f32)> = None; // (entity, tile, qty, distance)
     let mut best_any: Option<(Entity, Vec2, u32, f32)> = None; // nearest with at least 1
 
-    for (chest_ent, chest_transform, chest_inv) in chest_query.iter() {
-        let chest_tile = world_pos_to_tile(chest_transform.translation.xy());
+    for (chest_ent, chest_global_transform, chest_inv) in chest_query.iter() {
+        let chest_tile = world_pos_to_tile(chest_global_transform.translation().xy());
         let dist = unit_tile_pos.distance(chest_tile);
         let available = chest_inv.count(&desired_item_kind);
 
@@ -147,7 +150,7 @@ fn find_best_chest(
 fn add_move_to_then_take_rocks_from_chest_task(
     mut commands: Commands,
     mut unit_query: Query<(Entity, &Transform, &mut PathfindingAgent, &mut TaskQueue), With<Unit>>,
-    chest_query: Query<(Entity, &Transform, &Inventory), (With<Chest>, Without<Unit>)>,
+    chest_query: Query<(Entity, &GlobalTransform, &Inventory), (With<Chest>, Without<Unit>)>,
 ) {
     const DESIRED_QUANTITY: u32 = 10;
     const DESIRED_KIND: ItemKind = ItemKind::Rock;
@@ -168,6 +171,10 @@ fn add_move_to_then_take_rocks_from_chest_task(
             task_queue.0.push_front(Task::MoveTo(chest_tile_pos));
 
             // reset pathfingin_agent
+            // pathfinding_agent.target = Some(chest_tile_pos);
+            let test_tile_pos = world_pos_to_tile(Vec2::new(5.0 * TILE_SIZE.x, 4.0 * TILE_SIZE.y));
+            println!("chest_tile_pos: {:?} {:?}", chest_tile_pos, test_tile_pos);
+            // pathfinding_agent.target = Some(test_tile_pos);
             pathfinding_agent.target = Some(chest_tile_pos);
             pathfinding_agent.path.clear();
 

@@ -95,6 +95,10 @@ fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) ->
     path
 }
 
+// Dans votre fonction find_path, remplacez cette partie :
+
+// Dans votre fonction find_path, remplacez cette partie :
+
 fn find_path(
     start_pos: Vec2,
     end_pos: Vec2,
@@ -103,31 +107,38 @@ fn find_path(
     let start_grid = tile_pos_to_rounded_tile(start_pos);
     let end_grid = tile_pos_to_rounded_tile(end_pos);
 
-    if !is_tile_passable(end_grid, structure_manager) {
-        return None;
-    }
+    // ❌ ANCIEN CODE - causait le problème
+    // if !is_tile_passable(end_grid, structure_manager) {
+    //     return None;
+    // }
+
+    // ✅ NOUVEAU CODE - trouve la destination la plus proche si la cible n'est pas passable
+    let actual_end_grid = if !is_tile_passable(end_grid, structure_manager) {
+        // Si la destination n'est pas passable, on cherche la case passable la plus proche
+        // en tenant compte de la direction d'approche depuis start_grid
+        find_nearest_passable_tile(end_grid, start_grid, structure_manager).unwrap_or(start_grid)
+    } else {
+        end_grid
+    };
 
     // -------------------------
-    // Configuration de la limite
+    // Configuration de la limite (reste identique)
     // -------------------------
-    // Ajuste ces constantes selon tes besoins.
-    const BASE_LIMIT: usize = 500; // nombre d'expansions minimal
-    const PER_TILE_LIMIT: usize = 40; // coût par tuile de distance (augmente la limite si distance élevée)
-    const MAX_LIMIT: usize = 20_000; // plafond absolu pour éviter explosion
+    const BASE_LIMIT: usize = 500;
+    const PER_TILE_LIMIT: usize = 40;
+    const MAX_LIMIT: usize = 20_000;
 
-    let dist_tiles = heuristic(start_grid, end_grid); // distance en tuiles (float)
+    let dist_tiles = heuristic(start_grid, actual_end_grid);
     let per_tile_extra = ((dist_tiles).round() as isize).max(0) as usize;
     let mut max_expansions = BASE_LIMIT + per_tile_extra * PER_TILE_LIMIT;
     if max_expansions > MAX_LIMIT {
         max_expansions = MAX_LIMIT;
     }
 
-    // Si true -> retourner un chemin partiel vers le meilleur noeud exploré quand on atteint la limite.
-    // Si false -> retourner None (annuler la cible).
     let return_partial_on_limit = true;
 
     // -------------------------
-    // A* habituel
+    // A* habituel (reste identique, mais utilise actual_end_grid)
     // -------------------------
     let mut open_set = BinaryHeap::new();
     let mut all_nodes: HashMap<IVec2, PathNode> = HashMap::new();
@@ -135,7 +146,7 @@ fn find_path(
     let start_node = PathNode {
         pos: start_grid,
         g_cost: 0.0,
-        h_cost: heuristic(start_grid, end_grid),
+        h_cost: heuristic(start_grid, actual_end_grid), // ← Utilise actual_end_grid
         parent: None,
     };
     open_set.push(start_node.clone());
@@ -145,10 +156,8 @@ fn find_path(
 
     while let Some(current_node) = open_set.pop() {
         expansions += 1;
-        // Si trop d'expansions, on coupe
         if expansions > max_expansions {
             if return_partial_on_limit {
-                // Choisir le noeud exploré ayant le plus petit h_cost (le plus proche heuristiquement de la cible)
                 if let Some(best) = all_nodes
                     .values()
                     .min_by(|a, b| a.h_cost.partial_cmp(&b.h_cost).unwrap_or(Ordering::Equal))
@@ -162,8 +171,9 @@ fn find_path(
             }
         }
 
-        if current_node.pos == end_grid {
-            return Some(reconstruct_path(&all_nodes, end_grid));
+        if current_node.pos == actual_end_grid {
+            // ← Utilise actual_end_grid
+            return Some(reconstruct_path(&all_nodes, actual_end_grid));
         }
 
         for neighbor_pos in get_neighbors(current_node.pos) {
@@ -205,11 +215,65 @@ fn find_path(
                 let neighbor_node = PathNode {
                     pos: neighbor_pos,
                     g_cost: new_g_cost,
-                    h_cost: heuristic(neighbor_pos, end_grid),
+                    h_cost: heuristic(neighbor_pos, actual_end_grid), // ← Utilise actual_end_grid
                     parent: Some(current_node.pos),
                 };
                 open_set.push(neighbor_node.clone());
                 all_nodes.insert(neighbor_pos, neighbor_node);
+            }
+        }
+    }
+
+    None
+}
+
+// ✅ NOUVELLE FONCTION - trouve la case passable la plus proche en privilégiant la direction d'approche
+fn find_nearest_passable_tile(
+    target: IVec2,
+    start: IVec2,
+    structure_manager: &Res<StructureManager>,
+) -> Option<IVec2> {
+    // Calcule la direction d'approche depuis le point de départ
+    let approach_dir = IVec2::new((target.x - start.x).signum(), (target.y - start.y).signum());
+
+    // Liste des directions à tester, en commençant par celle opposée à l'approche
+    let mut directions = Vec::new();
+
+    // Direction opposée à l'approche (côté le plus proche)
+    if approach_dir.x != 0 || approach_dir.y != 0 {
+        directions.push(IVec2::new(-approach_dir.x, -approach_dir.y));
+    }
+
+    // Directions perpendiculaires à l'approche
+    if approach_dir.x != 0 {
+        directions.push(IVec2::new(0, 1)); // Nord
+        directions.push(IVec2::new(0, -1)); // Sud
+    }
+    if approach_dir.y != 0 {
+        directions.push(IVec2::new(1, 0)); // Est
+        directions.push(IVec2::new(-1, 0)); // Ouest
+    }
+
+    // Diagonales (moins prioritaires)
+    directions.extend([
+        IVec2::new(-1, -1),
+        IVec2::new(1, -1),
+        IVec2::new(-1, 1),
+        IVec2::new(1, 1),
+    ]);
+
+    // Direction d'approche en dernier recours
+    if approach_dir.x != 0 || approach_dir.y != 0 {
+        directions.push(approach_dir);
+    }
+
+    // Teste chaque direction par ordre de priorité
+    for radius in 1..=5 {
+        // Réduit le rayon pour être plus efficace
+        for &dir in &directions {
+            let candidate = target + dir * radius;
+            if is_tile_passable(candidate, structure_manager) {
+                return Some(candidate);
             }
         }
     }
