@@ -1,8 +1,8 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
     map::{
-        Chest, ChunkManager, MapPlugin, SolidStructure, Structure, StructureKind, StructureManager,
-        TILE_SIZE, place_structure, rounded_tile_pos_to_world, tile_pos_to_world,
+        Chest, ChunkManager, MapPlugin, Structure, StructureManager, TILE_SIZE, place_structure,
+        rounded_tile_pos_to_world,
     },
     pathfinding::{PathfindingAgent, PathfindingPlugin},
     units::{
@@ -68,7 +68,7 @@ fn setup(
     mut materials: ResMut<Assets<ColorMaterial>>,
     asset_server: Res<AssetServer>,
     mut structure_manager: ResMut<StructureManager>,
-    chunk_manager: Res<ChunkManager>,
+    mut chunk_manager: ResMut<ChunkManager>,
 ) {
     use bevy::color::palettes::css::GREEN;
     commands.spawn((Camera2d, Camera { ..default() }));
@@ -109,24 +109,28 @@ fn setup(
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
     ));
-
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 1000);
     let chest_entity = commands
         .spawn((
             Sprite::from_image(asset_server.load("structures/chest.png")),
-            Inventory::new(),
-            Structure {
-                kind: StructureKind::Chest,
-            },
+            inventory,
+            Structure,
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Chest,
         ))
         .id();
+
+    println!("chest_entity in setup(): {:?}", chest_entity);
 
     let rounded_tile_pos = IVec2::new(5, 5);
 
     place_structure(
         &mut commands,
+        &asset_server,
         &chest_entity,
         &mut structure_manager,
-        &chunk_manager,
+        &mut chunk_manager,
         rounded_tile_pos,
     );
 }

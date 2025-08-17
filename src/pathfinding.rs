@@ -1,11 +1,10 @@
 use crate::map::{
-    self, CHUNK_SIZE, ChunkManager, SolidStructure, Structure, StructureManager, get_neighbors,
-    is_tile_passable, tile_pos_to_rounded_tile, world_pos_to_tile,
+    self, StructureManager, get_neighbors, is_tile_passable, tile_pos_to_rounded_tile,
+    world_pos_to_tile,
 };
 use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
-use bevy_ecs_tilemap::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 

@@ -20,21 +20,13 @@ pub const STRUCTURE_LAYER_LEVEL: f32 = 0.0;
 pub struct MapPlugin;
 
 #[derive(Component)]
-pub struct Structure {
-    pub kind: StructureKind,
-}
-
-#[derive(Component)]
-pub struct SolidStructure;
+pub struct Structure;
 
 #[derive(Component)]
 pub struct Chest;
 
-#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
-pub enum StructureKind {
-    Wall,
-    Chest,
-}
+#[derive(Component)]
+pub struct Wall;
 
 pub fn spawn_chunk(
     commands: &mut Commands,
@@ -113,9 +105,8 @@ pub fn spawn_chunk(
         let wall_entity = commands
             .spawn((
                 Sprite::from_image(asset_server.load("structures/wall.png")),
-                Structure {
-                    kind: StructureKind::Wall,
-                },
+                Structure,
+                Wall,
             ))
             .id();
 
@@ -165,44 +156,42 @@ fn spawn_structure_in_chunk(
 
 // add transform to structure_entity and add it to structure_manager
 pub fn place_structure(
-    mut commands: &mut Commands,
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>, // Ajouté pour pouvoir spawner le chunk
     structure_entity: &Entity,
-    mut structure_manager: &mut ResMut<StructureManager>,
-    chunk_manager: &Res<ChunkManager>,
+    structure_manager: &mut ResMut<StructureManager>,
+    chunk_manager: &mut ResMut<ChunkManager>, // Maintenant mutable
     rounded_tile_pos: IVec2,
 ) {
     let rounded_chunk_pos = rounded_tile_pos_to_rounded_chunk(rounded_tile_pos);
 
-    // Trouve le tilemap correspondant
+    // Charger le chunk s'il n'existe pas
+    if !chunk_manager
+        .spawned_chunks
+        .contains_key(&rounded_chunk_pos)
+    {
+        let entity = spawn_chunk(commands, asset_server, structure_manager, rounded_chunk_pos);
+        chunk_manager
+            .spawned_chunks
+            .insert(rounded_chunk_pos, entity);
+    }
+
+    // Maintenant le chunk existe forcément
     if let Some(&tilemap_entity) = chunk_manager.spawned_chunks.get(&rounded_chunk_pos) {
-        // Structure attachée au tilemap existant
-        let tilemap_world_pos = rounded_tile_pos_to_world(rounded_tile_pos);
+        println!("a");
+        let tilemap_world_pos =
+            rounded_tile_pos_to_world(rounded_chunk_pos_to_rounded_tile(&rounded_chunk_pos));
 
         spawn_structure_in_chunk(
-            &mut commands,
-            &structure_entity,
-            &mut structure_manager,
+            commands,
+            structure_entity,
+            structure_manager,
             tilemap_entity,
             rounded_tile_pos,
             tilemap_world_pos,
         );
     } else {
-        // TODO: make sure it works as intended
-        // Si le chunk n'existe pas encore, crée une structure indépendante
-        // (sera attachée plus tard quand le chunk sera créé)
-
-        // let structure_entity = commands
-        //     .spawn((
-        //         Structure { kind },
-        //         Transform::from_translation(
-        //             rounded_tile_pos_to_world(rounded_tile_pos).extend(STRUCTURE_LAYER_LEVEL),
-        //         ),
-        //     ))
-        //     .id();
-
-        structure_manager
-            .structures
-            .insert(rounded_tile_pos, *structure_entity);
+        panic!();
     }
 }
 

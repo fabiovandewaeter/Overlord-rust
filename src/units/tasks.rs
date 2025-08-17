@@ -1,4 +1,5 @@
 use bevy::{input::common_conditions::input_pressed, prelude::*};
+use bevy_ecs_tilemap::map::CHUNK_SIZE_2D;
 use std::{cmp::min, collections::VecDeque};
 
 use crate::{
@@ -101,7 +102,7 @@ fn find_best_chest(
     unit_tile_pos: Vec2,
     desired_quantity: u32,
     desired_item_kind: ItemKind,
-    chest_query: &Query<(Entity, &Transform, &mut Inventory), (With<Chest>, Without<Unit>)>,
+    chest_query: &Query<(Entity, &Transform, &Inventory), (With<Chest>, Without<Unit>)>,
 ) -> Option<(Entity, Vec2, u32)> {
     let mut best_with_enough: Option<(Entity, Vec2, u32, f32)> = None; // (entity, tile, qty, distance)
     let mut best_any: Option<(Entity, Vec2, u32, f32)> = None; // nearest with at least 1
@@ -148,7 +149,7 @@ fn find_best_chest(
 fn add_move_to_then_take_rocks_from_chest_task(
     mut commands: Commands,
     mut unit_query: Query<(Entity, &Transform, &mut PathfindingAgent, &mut TaskQueue), With<Unit>>,
-    chest_query: Query<(Entity, &Transform, &mut Inventory), (With<Chest>, Without<Unit>)>,
+    chest_query: Query<(Entity, &Transform, &Inventory), (With<Chest>, Without<Unit>)>,
 ) {
     const DESIRED_QUANTITY: u32 = 10;
     const DESIRED_KIND: ItemKind = ItemKind::Rock;
@@ -173,10 +174,6 @@ fn add_move_to_then_take_rocks_from_chest_task(
             pathfinding_agent.path.clear();
 
             commands.entity(unit_entity).remove::<Available>();
-            println!(
-                "OUI chest found {:?} {:?} {:?}",
-                chest_entity, chest_tile_pos, available_quantity
-            );
         } else {
             println!("no chest found");
         }

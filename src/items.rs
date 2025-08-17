@@ -17,7 +17,7 @@ pub enum UniqueItemKind {
     IronSword,
 }
 
-#[derive(Component, Default)]
+#[derive(Component, Default, Debug)]
 pub struct Inventory {
     pub stackable_items: HashMap<ItemKind, u32>,
     pub unique_items: Vec<Entity>,
