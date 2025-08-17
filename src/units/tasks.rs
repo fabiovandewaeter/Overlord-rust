@@ -97,12 +97,10 @@ pub fn process_current_task(
                 Some(Task::MoveTo(target_pos)) => {
                     pathfinding_agent.target = Some(*target_pos);
                     pathfinding_agent.path.clear();
-                    current_task.initialized = true;
                 }
-                _ => {
-                    current_task.initialized = true;
-                }
+                _ => {}
             }
+            current_task.initialized = true;
         }
 
         if let Some(task) = &mut current_task.task {
@@ -112,7 +110,8 @@ pub fn process_current_task(
                     let distance = current_unit_tile_pos.distance(*target_pos);
 
                     // Si on est assez proche de la destination, considérer la tâche terminée
-                    if distance <= 0.8 + UNIT_REACH {
+                    // if distance <= 0.8 + UNIT_REACH {
+                    if pathfinding_agent.path.is_empty() && distance <= 0.8 + UNIT_REACH {
                         // Ajustez cette valeur selon vos besoins
                         current_task.task = None;
                         // Optionnel : arrêter le pathfinding

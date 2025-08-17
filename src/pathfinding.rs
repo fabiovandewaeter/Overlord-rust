@@ -325,7 +325,7 @@ pub fn movement_system(
                 agent.path.pop_front();
                 if agent.path.is_empty() {
                     agent.target = None; // Destination finale atteinte
-                    current_task.task = None;
+                    // current_task.task = None;
                 }
             } else {
                 // Se déplacer vers le waypoint
