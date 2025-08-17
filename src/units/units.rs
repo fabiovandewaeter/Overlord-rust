@@ -1,31 +1,70 @@
 use crate::{
     UpsCounter,
+    items::Inventory,
     map::{
         StructureManager, TILE_SIZE, get_neighbors, is_tile_passable, rounded_tile_pos_to_world,
         world_pos_to_rounded_tile,
     },
-    units::tasks::CurrentTask,
+    pathfinding::PathfindingAgent,
+    units::tasks::{CurrentTask, TaskQueue},
 };
 use bevy::prelude::*;
 
 pub const UNIT_REACH: f32 = 1.0;
+pub const UNIT_DEFAULT_MOVEMENT_SPEED: f32 = 5.0;
+pub const UNIT_DEFAULT_ROTATION_SPEED: f32 = f32::to_radians(360.0);
 
-#[derive(Component, Debug)]
+#[derive(Component, Debug, Default)]
+#[require(
+    Sprite,
+    Transform,
+    MovementSpeed,
+    RotationSpeed,
+    DesiredMovement,
+    PathfindingAgent,
+    CircularCollider,
+    Inventory,
+    TaskQueue,
+    CurrentTask
+)]
 pub struct Unit {
-    pub movement_speed: f32,
-    pub rotation_speed: f32,
+    pub name: String,
+}
+
+#[derive(Component)]
+pub struct MovementSpeed(pub f32);
+
+impl Default for MovementSpeed {
+    fn default() -> Self {
+        Self(UNIT_DEFAULT_MOVEMENT_SPEED)
+    }
+}
+
+#[derive(Component)]
+pub struct RotationSpeed(pub f32);
+
+impl Default for RotationSpeed {
+    fn default() -> Self {
+        Self(UNIT_DEFAULT_ROTATION_SPEED)
+    }
 }
 
 #[derive(Component, Default)]
-pub struct DesiredMovement(Vec3);
+pub struct DesiredMovement(pub Vec3);
 
 /// to add if the entity needs to checks its collisions with other entities (collisions with walls isn't affected)
 #[derive(Component)]
-pub struct ActiveCollisions;
+pub struct UnitUnitCollisions;
 
 #[derive(Component)]
 pub struct CircularCollider {
     pub radius: f32,
+}
+
+impl Default for CircularCollider {
+    fn default() -> Self {
+        Self { radius: 0.4 }
+    }
 }
 
 // Fonction utilitaire pour calculer la collision cercle-rectangle
@@ -67,14 +106,22 @@ fn circle_rect_collision(
 pub fn update_logic(
     mut counter: ResMut<UpsCounter>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    query: Query<(&Unit, &mut Transform, &mut DesiredMovement)>,
+    mut unit_query: Query<
+        (
+            &MovementSpeed,
+            &RotationSpeed,
+            &mut Transform,
+            &mut DesiredMovement,
+        ),
+        With<Unit>,
+    >,
     time: Res<Time>,
 ) {
     counter.ticks += 1;
 
-    for entity in query {
-        let (ship, mut transform, mut desired_movement) = entity;
-
+    for (movement_speed, rotation_speed, mut transform, mut desired_movement) in
+        unit_query.iter_mut()
+    {
         let mut rotation_factor = 0.0;
         let mut movement_factor = 0.0;
 
@@ -91,10 +138,10 @@ pub fn update_logic(
         }
 
         // Update the ship rotation around the Z axis (perpendicular to the 2D plane of the screen)
-        transform.rotate_z(rotation_factor * ship.rotation_speed * time.delta_secs());
+        transform.rotate_z(rotation_factor * rotation_speed.0 * time.delta_secs());
 
         let movement_direction = transform.rotation * Vec3::Y;
-        let movement_distance_tiles = movement_factor * ship.movement_speed * time.delta_secs();
+        let movement_distance_tiles = movement_factor * movement_speed.0 * time.delta_secs();
         let movement_distance_pixels = movement_distance_tiles * TILE_SIZE.x;
         let translation_delta = movement_direction * movement_distance_pixels;
 
@@ -142,7 +189,7 @@ pub fn move_and_collide_units(
 pub fn unit_unit_collisions(
     mut unit_query: Query<
         (&mut Transform, &CircularCollider),
-        (With<Unit>, With<ActiveCollisions>),
+        (With<Unit>, With<UnitUnitCollisions>),
     >,
 ) {
     let mut combinations = unit_query.iter_combinations_mut();

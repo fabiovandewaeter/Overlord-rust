@@ -4,13 +4,11 @@ use crate::{
         Chest, ChunkManager, MapPlugin, Structure, StructureManager, TILE_SIZE, place_structure,
         rounded_tile_pos_to_world,
     },
-    pathfinding::{PathfindingAgent, PathfindingPlugin},
+    pathfinding::PathfindingPlugin,
     units::{
-        CircularCollider, DesiredMovement, Unit, display_units_with_no_current_task,
-        move_and_collide_units,
-        states::Available,
-        tasks::{CurrentTask, TaskQueue, TasksPlugin},
-        unit_unit_collisions, update_logic,
+        DesiredMovement, Unit, UnitUnitCollisions, display_units_with_no_current_task,
+        move_and_collide_units, states::Available, tasks::TasksPlugin, unit_unit_collisions,
+        update_logic,
     },
 };
 use bevy::{
@@ -22,7 +20,7 @@ use bevy::{
     prelude::*,
     time::common_conditions::on_timer,
 };
-use std::{collections::VecDeque, time::Duration};
+use std::time::Duration;
 
 mod items;
 mod map;
@@ -75,33 +73,18 @@ fn setup(
 
     let player_texture_handle = asset_server.load("default.png");
     for _i in 0..1 {
-        let random_number: i32 = 5;
-
-        // let world_pos = tile_pos_to_world(Vec2::new(0.5, 0.5));
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
-        // unit
+        // uses Unit required componenents to make it easier
         commands.spawn((
+            Unit {
+                name: "Player".into(),
+            },
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(0.0)),
             DesiredMovement::default(),
-            Unit {
-                movement_speed: random_number as f32,
-                rotation_speed: f32::to_radians(360.0),
-            },
-            // keep that component because entities will always move so it's useless to add/remove it everytime
-            PathfindingAgent {
-                target: None,
-                path: VecDeque::new(),
-                speed: random_number as f32,
-                path_tolerance: 0.1, // 10% de la taille d'une tile
-            },
             Available,
-            CircularCollider { radius: 0.4 },
-            // ActiveCollisions,
-            Inventory::new(),
-            TaskQueue::from(vec![]),
-            CurrentTask(None),
+            // UnitUnitCollisions,
         ));
     }
 
@@ -113,11 +96,11 @@ fn setup(
     inventory.add(ItemKind::Rock, 1000);
     let chest_entity = commands
         .spawn((
+            Structure,
+            Chest,
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
-            Structure,
             Transform::from_xyz(0.0, 0.0, 0.0),
-            Chest,
         ))
         .id();
 

@@ -1,14 +1,11 @@
-use std::collections::HashMap;
-
+use crate::units::Unit;
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
-
-use crate::units::Unit;
+use std::collections::HashMap;
 
 pub const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
-// For this example, don't choose too large a chunk size.
-pub const CHUNK_SIZE: UVec2 = UVec2 { x: 16, y: 16 };
+pub const CHUNK_SIZE: UVec2 = UVec2 { x: 32, y: 32 };
 // Render chunk sizes are set to 4 render chunks per user specified chunk.
 pub const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
     x: CHUNK_SIZE.x * 2,
@@ -104,9 +101,9 @@ pub fn spawn_chunk(
     for rounded_tile_pos in structures_to_spawn {
         let wall_entity = commands
             .spawn((
-                Sprite::from_image(asset_server.load("structures/wall.png")),
                 Structure,
                 Wall,
+                Sprite::from_image(asset_server.load("structures/wall.png")),
             ))
             .id();
 

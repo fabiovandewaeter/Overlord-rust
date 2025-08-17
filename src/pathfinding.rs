@@ -2,6 +2,7 @@ use crate::map::{
     self, StructureManager, get_neighbors, is_tile_passable, tile_pos_to_rounded_tile,
     world_pos_to_tile,
 };
+use crate::units::MovementSpeed;
 use crate::units::tasks::CurrentTask;
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
@@ -56,8 +57,17 @@ pub fn grid_to_tile_pos(grid_pos: IVec2) -> Vec2 {
 pub struct PathfindingAgent {
     pub target: Option<Vec2>,
     pub path: VecDeque<Vec2>,
-    pub speed: f32,
     pub path_tolerance: f32,
+}
+
+impl Default for PathfindingAgent {
+    fn default() -> Self {
+        PathfindingAgent {
+            target: None,
+            path: VecDeque::new(),
+            path_tolerance: 0.1, // 10% de la taille d'une tile
+        }
+    }
 }
 
 /// checks if there is a structure at rounded_tile_pos
@@ -233,10 +243,15 @@ pub fn pathfinding_system(
 
 /// makes the entiry moves along the path ; sets CurrentTask.0 to None when reached target
 pub fn movement_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &mut Transform, &mut CurrentTask)>,
+    mut agents_query: Query<(
+        &mut PathfindingAgent,
+        &MovementSpeed,
+        &mut Transform,
+        &mut CurrentTask,
+    )>,
     time: Res<Time>,
 ) {
-    for (mut agent, mut transform, mut current_task) in agents_query.iter_mut() {
+    for (mut agent, movement_speed, mut transform, mut current_task) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
             let current_tile_pos = world_pos_to_tile(transform.translation.xy());
             let distance = current_tile_pos.distance(next_waypoint);
@@ -253,7 +268,7 @@ pub fn movement_system(
                 let direction = (next_waypoint - current_tile_pos).normalize_or_zero();
 
                 // move in pixels: convert tile movement to pixels
-                let movement_tiles = direction * agent.speed * time.delta_secs();
+                let movement_tiles = direction * movement_speed.0 * time.delta_secs();
                 let movement_pixels =
                     movement_tiles * Vec2::new(map::TILE_SIZE.x, map::TILE_SIZE.y);
                 transform.translation.x += movement_pixels.x;

@@ -1,13 +1,11 @@
-use bevy::{input::common_conditions::input_pressed, prelude::*};
-use bevy_ecs_tilemap::map::CHUNK_SIZE_2D;
-use std::{cmp::min, collections::VecDeque};
-
 use crate::{
     items::{Inventory, ItemKind},
     map::{Chest, world_pos_to_tile},
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units, states::Available, update_logic},
 };
+use bevy::{input::common_conditions::input_pressed, prelude::*};
+use std::{cmp::min, collections::VecDeque};
 
 pub struct TasksPlugin;
 
@@ -30,7 +28,7 @@ impl From<Vec<Task>> for TaskQueue {
     }
 }
 
-#[derive(Component)]
+#[derive(Component, Default)]
 pub struct CurrentTask(pub Option<Task>);
 
 /// pops the front of the TaskQueue to get the next CurrentTask ; add Available component if unit has no more tasks to do
