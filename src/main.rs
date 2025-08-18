@@ -6,9 +6,9 @@ use crate::{
     },
     pathfinding::PathfindingPlugin,
     units::{
-        DesiredMovement, Unit, display_units_inventory, display_units_with_no_current_task,
-        move_and_collide_units, states::Available, tasks::TasksPlugin, unit_unit_collisions,
-        update_logic,
+        DesiredMovement, MovementSpeed, Unit, display_units_inventory,
+        display_units_with_no_current_action, move_and_collide_units, states::Available,
+        tasks::TasksPlugin, unit_unit_collisions, update_logic,
     },
 };
 use bevy::{
@@ -20,6 +20,7 @@ use bevy::{
     prelude::*,
     time::common_conditions::on_timer,
 };
+use rand::{Rng, rng};
 use std::time::Duration;
 
 mod items;
@@ -71,8 +72,10 @@ fn setup(
     use bevy::color::palettes::css::GREEN;
     commands.spawn((Camera2d, Camera { ..default() }));
 
+    let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
-    for _i in 0..1 {
+    for _i in 0..1000 {
+        let random_speed = rng.random_range(5.0..30.0);
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // uses Unit required componenents to make it easier
@@ -84,6 +87,7 @@ fn setup(
             Transform::from_translation(world_pos.extend(0.0)),
             DesiredMovement::default(),
             Available,
+            MovementSpeed(random_speed),
             // UnitUnitCollisions,
         ));
     }
@@ -106,7 +110,53 @@ fn setup(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(5, 5);
+    let rounded_tile_pos = IVec2::new(50, 5);
+    place_structure(
+        &mut commands,
+        &asset_server,
+        &chest_entity,
+        &mut structure_manager,
+        &mut chunk_manager,
+        rounded_tile_pos,
+    );
+
+    // provider chest 2
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 1000);
+    let chest_entity = commands
+        .spawn((
+            Structure,
+            Chest,
+            Sprite::from_image(asset_server.load("structures/chest.png")),
+            inventory,
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Provider,
+        ))
+        .id();
+    let rounded_tile_pos = IVec2::new(5, 50);
+    place_structure(
+        &mut commands,
+        &asset_server,
+        &chest_entity,
+        &mut structure_manager,
+        &mut chunk_manager,
+        rounded_tile_pos,
+    );
+
+    // provider chest 3
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 1000);
+    let chest_entity = commands
+        .spawn((
+            Structure,
+            Chest,
+            Sprite::from_image(asset_server.load("structures/chest.png")),
+            inventory,
+            Transform::from_xyz(0.0, 0.0, 0.0),
+            Provider,
+        ))
+        .id();
+    let rounded_tile_pos = IVec2::new(5, -50);
     place_structure(
         &mut commands,
         &asset_server,
@@ -118,7 +168,7 @@ fn setup(
 
     // requester chest
     let mut inventory = Inventory::new();
-    inventory.add(ItemKind::Rock, 0);
+    inventory.add(ItemKind::Rock, 1);
     let chest_entity = commands
         .spawn((
             Structure,
@@ -129,7 +179,7 @@ fn setup(
             Requester,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(-5, 5);
+    let rounded_tile_pos = IVec2::new(-50, 5);
     place_structure(
         &mut commands,
         &asset_server,
@@ -233,8 +283,8 @@ fn main() {
                 move_and_collide_units,
                 unit_unit_collisions.after(move_and_collide_units),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                display_units_with_no_current_task.run_if(on_timer(Duration::from_secs(1))),
-                display_units_inventory.run_if(on_timer(Duration::from_secs(1))),
+                display_units_with_no_current_action.run_if(on_timer(Duration::from_secs(1))),
+                display_units_inventory.run_if(on_timer(Duration::from_secs(5))),
             ),
         )
         .run();

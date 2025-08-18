@@ -30,6 +30,11 @@ pub struct Durability {
     pub max: u16,
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub enum CraftRecipeId {
+    Chest,
+}
+
 impl Inventory {
     pub fn new() -> Self {
         Self {

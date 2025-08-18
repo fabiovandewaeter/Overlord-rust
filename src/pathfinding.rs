@@ -3,7 +3,7 @@ use crate::map::{
     world_pos_to_tile,
 };
 use crate::units::MovementSpeed;
-use crate::units::tasks::{CurrentTask, TaskQueue, reset_tasks};
+use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
@@ -305,17 +305,17 @@ pub fn pathfinding_system(
     }
 }
 
-/// makes the entiry moves along the path ; sets CurrentTask.0 to None when reached target
+/// makes the entiry moves along the path ; sets CurrentAction.0 to None when reached target
 pub fn movement_system(
     mut agents_query: Query<(
         &mut PathfindingAgent,
         &MovementSpeed,
         &mut Transform,
-        // &mut CurrentTask,
+        // &mut CurrentAction,
     )>,
     time: Res<Time>,
 ) {
-    // for (mut agent, movement_speed, mut transform, mut current_task) in agents_query.iter_mut() {
+    // for (mut agent, movement_speed, mut transform, mut current_action) in agents_query.iter_mut() {
     for (mut agent, movement_speed, mut transform) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
             let current_tile_pos = world_pos_to_tile(transform.translation.xy());
@@ -326,7 +326,7 @@ pub fn movement_system(
                 agent.path.pop_front();
                 if agent.path.is_empty() {
                     agent.target = None; // Destination finale atteinte
-                    // current_task.task = None;
+                    // current_action.action = None;
                 }
             } else {
                 // Se déplacer vers le waypoint
@@ -351,7 +351,7 @@ pub fn movement_system(
 
 /// Système pour définir une cible avec le clic droit de la souris.
 fn mouse_target_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &mut CurrentTask, &mut TaskQueue)>,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut CurrentAction, &mut ActionQueue)>,
     windows: Query<&Window>,
     cameras: Query<(&Camera, &GlobalTransform)>,
 ) {
@@ -365,11 +365,12 @@ fn mouse_target_system(
     if let Some(cursor_pos) = window.cursor_position() {
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
             let tile_pos = world_pos_to_tile(world_pos);
-            for (mut pathfinding_agent, mut current_task, mut task_queue) in agents_query.iter_mut()
+            for (mut pathfinding_agent, mut current_action, mut action_queue) in
+                agents_query.iter_mut()
             {
-                reset_tasks(
-                    &mut *task_queue,
-                    &mut *current_task,
+                reset_actions(
+                    &mut *action_queue,
+                    &mut *current_action,
                     &mut *pathfinding_agent,
                 );
                 pathfinding_agent.target = Some(tile_pos);

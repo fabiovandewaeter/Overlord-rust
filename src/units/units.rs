@@ -6,7 +6,7 @@ use crate::{
         world_pos_to_rounded_tile,
     },
     pathfinding::PathfindingAgent,
-    units::tasks::{CurrentTask, TaskQueue},
+    units::tasks::{ActionQueue, CurrentAction, CurrentTask},
 };
 use bevy::prelude::*;
 
@@ -24,7 +24,8 @@ pub const UNIT_DEFAULT_ROTATION_SPEED: f32 = f32::to_radians(360.0);
     PathfindingAgent,
     CircularCollider,
     Inventory,
-    TaskQueue,
+    ActionQueue,
+    CurrentAction,
     CurrentTask
 )]
 pub struct Unit {
@@ -222,14 +223,14 @@ pub fn unit_unit_collisions(
     }
 }
 
-pub fn display_units_with_no_current_task(unit_query: Query<&CurrentTask, With<Unit>>) {
+pub fn display_units_with_no_current_action(unit_query: Query<&CurrentAction, With<Unit>>) {
     let mut counter = 0;
-    for current_task in unit_query.iter() {
-        if current_task.task.is_none() {
+    for current_action in unit_query.iter() {
+        if current_action.action.is_none() {
             counter += 1;
         }
     }
-    println!("Counter units with no current task: {}", counter);
+    println!("Counter units with no current action: {}", counter);
 }
 
 pub fn display_units_inventory(unit_query: Query<&Inventory>) {
