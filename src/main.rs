@@ -7,8 +7,10 @@ use crate::{
     pathfinding::PathfindingPlugin,
     units::{
         DesiredMovement, MovementSpeed, Unit, display_units_inventory,
-        display_units_with_no_current_action, move_and_collide_units, states::Available,
-        tasks::TasksPlugin, unit_unit_collisions, update_logic,
+        display_units_with_no_current_action, move_and_collide_units,
+        states::Available,
+        tasks::{TasksPlugin, display_reservations},
+        unit_unit_collisions, update_logic,
     },
 };
 use bevy::{
@@ -110,7 +112,7 @@ fn setup(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(50, 5);
+    let rounded_tile_pos = IVec2::new(10, 5);
     place_structure(
         &mut commands,
         &asset_server,
@@ -133,7 +135,7 @@ fn setup(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(5, 50);
+    let rounded_tile_pos = IVec2::new(5, 10);
     place_structure(
         &mut commands,
         &asset_server,
@@ -156,7 +158,7 @@ fn setup(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(5, -50);
+    let rounded_tile_pos = IVec2::new(5, -10);
     place_structure(
         &mut commands,
         &asset_server,
@@ -179,7 +181,7 @@ fn setup(
             Requester,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(-50, 5);
+    let rounded_tile_pos = IVec2::new(-10, 5);
     place_structure(
         &mut commands,
         &asset_server,
@@ -283,8 +285,9 @@ fn main() {
                 move_and_collide_units,
                 unit_unit_collisions.after(move_and_collide_units),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                display_units_with_no_current_action.run_if(on_timer(Duration::from_secs(1))),
+                // display_units_with_no_current_action.run_if(on_timer(Duration::from_secs(1))),
                 display_units_inventory.run_if(on_timer(Duration::from_secs(5))),
+                display_reservations.run_if(on_timer(Duration::from_secs(5))),
             ),
         )
         .run();

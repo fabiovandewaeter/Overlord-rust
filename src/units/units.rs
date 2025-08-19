@@ -235,6 +235,8 @@ pub fn display_units_with_no_current_action(unit_query: Query<&CurrentAction, Wi
 
 pub fn display_units_inventory(unit_query: Query<&Inventory>) {
     for inventory in unit_query.iter() {
-        println!("{:?}", inventory);
+        if !inventory.stackable_items.is_empty() {
+            println!("{:?}", inventory);
+        }
     }
 }
