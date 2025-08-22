@@ -13,6 +13,7 @@ use crate::{
         unit_unit_collisions, update_logic,
     },
 };
+use bevy::log::*;
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::{

@@ -308,10 +308,11 @@ fn spawn_chunks_around_camera(
     mut chunk_manager: ResMut<ChunkManager>,
     mut structure_manager: ResMut<StructureManager>,
 ) {
+    const SIZE: i32 = 40;
     for transform in camera_query.iter() {
         let camera_chunk_pos = world_pos_to_rounded_chunk(&transform.translation.xy());
-        for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
-            for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
+        for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
+            for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
                 let chunk_pos = IVec2::new(x, y);
                 if !chunk_manager.spawned_chunks.contains_key(&chunk_pos) {
                     let entity = spawn_chunk(
@@ -334,11 +335,12 @@ fn spawn_chunks_around_units(
     mut chunk_manager: ResMut<ChunkManager>,
     mut structure_manager: ResMut<StructureManager>,
 ) {
+    const SIZE: i32 = 2;
     // for transform in camera_query.iter() {
     for unit_transform in unit_query {
         let camera_chunk_pos = camera_pos_to_rounded_chunk_pos(&unit_transform.translation.xy());
-        for y in (camera_chunk_pos.y - 2)..(camera_chunk_pos.y + 2) {
-            for x in (camera_chunk_pos.x - 2)..(camera_chunk_pos.x + 2) {
+        for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
+            for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
                 let chunk_pos = IVec2::new(x, y);
                 if !chunk_manager.spawned_chunks.contains_key(&IVec2::new(x, y)) {
                     let entity = spawn_chunk(
@@ -371,7 +373,8 @@ impl Plugin for MapPlugin {
             .insert_resource(ChunkManager::default())
             .insert_resource(StructureManager::default())
             .add_systems(
-                Update,
+                // Update,
+                PostStartup,
                 (spawn_chunks_around_camera, spawn_chunks_around_units),
             );
     }

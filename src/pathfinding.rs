@@ -332,8 +332,15 @@ pub fn movement_system(
                 // Se déplacer vers le waypoint
                 let direction = (next_waypoint - current_tile_pos).normalize_or_zero();
 
+                // Calculer la distance restante au waypoint
+                let remaining_distance = current_tile_pos.distance(next_waypoint);
+                let max_movement = movement_speed.0 * time.delta_secs();
+
+                // Ne pas dépasser le waypoint
+                let movement_distance = max_movement.min(remaining_distance);
+                let movement_tiles = direction * movement_distance;
                 // move in pixels: convert tile movement to pixels
-                let movement_tiles = direction * movement_speed.0 * time.delta_secs();
+                // let movement_tiles = direction * movement_speed.0 * time.delta_secs();
                 let movement_pixels =
                     movement_tiles * Vec2::new(map::TILE_SIZE.x, map::TILE_SIZE.y);
                 transform.translation.x += movement_pixels.x;
@@ -383,13 +390,14 @@ fn mouse_target_system(
 impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            FixedUpdate,
+            Update,
             (
-                pathfinding_system,
-                movement_system,
+                // pathfinding_system,
+                // movement_system,
                 mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
             )
                 .chain(),
-        );
+        )
+        .add_systems(FixedUpdate, (pathfinding_system, movement_system).chain());
     }
 }
