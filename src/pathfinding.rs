@@ -383,7 +383,7 @@ fn mouse_target_system(
 impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
-            Update,
+            FixedUpdate,
             (
                 pathfinding_system,
                 movement_system,
