@@ -4,16 +4,12 @@ use crate::{
         Chest, ChunkManager, MapPlugin, Provider, Requester, Structure, StructureManager,
         TILE_SIZE, place_structure, rounded_tile_pos_to_world,
     },
-    pathfinding::PathfindingPlugin,
+    // pathfinding::PathfindingPlugin,
     units::{
-        DesiredMovement, MovementSpeed, Unit, display_units_inventory,
-        display_units_with_no_current_action, move_and_collide_units,
-        states::Available,
-        tasks::{TasksPlugin, display_reservations},
-        unit_unit_collisions, update_logic,
+        TileMovement, Unit, UnitUnitCollisions, display_units_inventory_system,
+        move_and_collide_units_system, test_units_control_system,
     },
 };
-use bevy::log::*;
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::{
@@ -28,7 +24,7 @@ use std::time::Duration;
 
 mod items;
 mod map;
-mod pathfinding;
+// mod pathfinding;
 mod units;
 
 const TARGET_UPS: f64 = 30.0;
@@ -64,6 +60,10 @@ fn display_fps_ups(
     }
 }
 
+pub fn update_logic(mut counter: ResMut<UpsCounter>) {
+    counter.ticks += 1;
+}
+
 fn setup(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -77,8 +77,9 @@ fn setup(
 
     let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
-    for _i in 0..1000 {
-        let random_speed = rng.random_range(5.0..30.0);
+    for _i in 0..1 {
+        // let random_speed = rng.random_range(1.0..2.0);
+        let random_speed = 20.0;
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // uses Unit required componenents to make it easier
@@ -88,12 +89,25 @@ fn setup(
             },
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(0.0)),
-            DesiredMovement::default(),
-            Available,
-            MovementSpeed(random_speed),
-            // UnitUnitCollisions,
+            TileMovement::new(random_speed),
+            // Available,
+            UnitUnitCollisions,
         ));
     }
+    let random_speed = 0.0;
+    let world_pos = rounded_tile_pos_to_world(IVec2::new(5, 0));
+
+    // uses Unit required componenents to make it easier
+    commands.spawn((
+        Unit {
+            name: "Player".into(),
+        },
+        Sprite::from_image(player_texture_handle.clone()),
+        Transform::from_translation(world_pos.extend(0.0)),
+        TileMovement::new(random_speed),
+        // Available,
+        UnitUnitCollisions,
+    ));
 
     commands.spawn((
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
@@ -269,8 +283,8 @@ fn main() {
         }))
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(MapPlugin)
-        .add_plugins(PathfindingPlugin)
-        .add_plugins(TasksPlugin)
+        // .add_plugins(PathfindingPlugin)
+        // .add_plugins(TasksPlugin)
         .insert_resource(UpsCounter {
             ticks: 0,
             last_second: 0.0,
@@ -283,12 +297,12 @@ fn main() {
             FixedUpdate,
             (
                 update_logic,
-                move_and_collide_units,
-                unit_unit_collisions.after(move_and_collide_units),
+                move_and_collide_units_system,
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
                 // display_units_with_no_current_action.run_if(on_timer(Duration::from_secs(1))),
-                display_units_inventory.run_if(on_timer(Duration::from_secs(5))),
-                display_reservations.run_if(on_timer(Duration::from_secs(5))),
+                display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
+                // display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
+                test_units_control_system,
             ),
         )
         .run();

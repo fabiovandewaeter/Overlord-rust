@@ -2,7 +2,7 @@ use crate::{
     items::{CraftRecipeId, Inventory, ItemKind},
     map::{Chest, Provider, Requester, world_pos_to_tile},
     pathfinding::PathfindingAgent,
-    units::{UNIT_REACH, Unit, move_and_collide_units, states::Available, update_logic},
+    units::{UNIT_REACH, Unit, move_and_collide_units_system, states::Available},
 };
 use bevy::{input::common_conditions::input_pressed, prelude::*};
 use std::{
@@ -189,7 +189,7 @@ impl Reservations {
 
 /// Planner: decompose Task -> Actions and attempt reservations.
 /// It runs on units that have a CurrentTask (Pending) and an ActionQueue.
-fn actions_decompose_planner(
+fn actions_decompose_planner_system(
     mut commands: Commands,
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
@@ -325,7 +325,7 @@ fn actions_decompose_planner(
     }
 }
 
-pub fn reset_actions(
+pub fn reset_actions_system(
     action_queue: &mut ActionQueue,
     current_action: &mut CurrentAction,
     pathfinding_agent: &mut PathfindingAgent,
@@ -346,7 +346,7 @@ pub fn reset_actions(
 }
 
 /// pops the front of the ActionQueue to get the next CurrentAction ; add Available component if unit has no more actions to do
-pub fn assign_next_action_or_set_available(
+pub fn assign_next_action_or_set_available_system(
     mut commands: Commands,
     mut unit_query: Query<
         (Entity, &mut ActionQueue, &mut CurrentAction),
@@ -366,7 +366,7 @@ pub fn assign_next_action_or_set_available(
 }
 
 /// Executor: process current actions (Take/Drop/MoveTo)
-pub fn process_current_action(
+pub fn process_current_action_system(
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
         (
@@ -527,7 +527,7 @@ pub fn process_current_action(
 /// Logic:
 /// - If a unit has a Task in Planned state and both ActionQueue empty & no CurrentAction -> mark Completed and clear task + release any leftover reservations.
 /// - If a Task is Failed -> release reservations & clear task (so it can be retried).
-fn update_task_completion(
+fn update_task_completion_system(
     mut commands: Commands,
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
@@ -635,7 +635,7 @@ fn find_best_chest(
 }
 
 /// Test helper: assign a GetItems task when pressing E (safe: only assign when no current task or previous task completed/failed)
-fn test_find_2_rocks(
+fn test_find_2_rocks_system(
     mut unit_query: Query<
         (&Transform, &mut ActionQueue, &mut CurrentTask),
         (With<Unit>, With<PathfindingAgent>),
@@ -667,7 +667,7 @@ fn test_find_2_rocks(
 }
 
 /// Test helper: assign a DeliverItems task that goes to the requester chest and drops 2 rocks
-fn test_deliver_2_rocks(
+fn test_deliver_2_rocks_system(
     mut unit_query: Query<
         (&Transform, &mut ActionQueue, &mut CurrentTask),
         (With<Unit>, With<PathfindingAgent>),
@@ -698,7 +698,10 @@ fn test_deliver_2_rocks(
     }
 }
 
-pub fn display_reservations(reservations: Res<Reservations>, unit_query: Query<&CurrentAction>) {
+pub fn display_reservations_system(
+    reservations: Res<Reservations>,
+    unit_query: Query<&CurrentAction>,
+) {
     println!("reservations: {:?}", reservations.reserved);
     for current_action in unit_query.iter() {
         if let Some(action) = &current_action.action {
@@ -712,14 +715,14 @@ impl Plugin for TasksPlugin {
         app.insert_resource(Reservations::default()).add_systems(
             FixedUpdate,
             (
-                actions_decompose_planner.before(process_current_action),
-                process_current_action.before(move_and_collide_units),
-                update_task_completion.after(process_current_action),
-                assign_next_action_or_set_available.after(update_logic),
+                actions_decompose_planner_system.before(process_current_action_system),
+                process_current_action_system.before(move_and_collide_units_system),
+                update_task_completion_system.after(process_current_action_system),
+                assign_next_action_or_set_available_system,
                 // tests:
-                test_find_2_rocks.run_if(input_pressed(KeyCode::KeyE)),
+                test_find_2_rocks_system.run_if(input_pressed(KeyCode::KeyE)),
                 // you can bind another key for deliver test, e.g. R
-                test_deliver_2_rocks.run_if(input_pressed(KeyCode::KeyR)),
+                test_deliver_2_rocks_system.run_if(input_pressed(KeyCode::KeyR)),
             ),
         );
     }

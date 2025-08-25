@@ -301,14 +301,14 @@ pub fn camera_pos_to_rounded_chunk_pos(camera_pos: &Vec2) -> IVec2 {
 }
 // ==========================================
 
-fn spawn_chunks_around_camera(
+fn spawn_chunks_around_camera_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     camera_query: Query<&Transform, With<Camera>>,
     mut chunk_manager: ResMut<ChunkManager>,
     mut structure_manager: ResMut<StructureManager>,
 ) {
-    const SIZE: i32 = 40;
+    const SIZE: i32 = 4;
     for transform in camera_query.iter() {
         let camera_chunk_pos = world_pos_to_rounded_chunk(&transform.translation.xy());
         for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
@@ -328,7 +328,7 @@ fn spawn_chunks_around_camera(
     }
 }
 
-fn spawn_chunks_around_units(
+fn spawn_chunks_around_units_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     unit_query: Query<&Transform, With<Unit>>,
@@ -373,9 +373,11 @@ impl Plugin for MapPlugin {
             .insert_resource(ChunkManager::default())
             .insert_resource(StructureManager::default())
             .add_systems(
-                // Update,
-                PostStartup,
-                (spawn_chunks_around_camera, spawn_chunks_around_units),
+                FixedUpdate,
+                (
+                    spawn_chunks_around_camera_system,
+                    spawn_chunks_around_units_system,
+                ),
             );
     }
 }

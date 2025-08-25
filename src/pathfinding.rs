@@ -1,9 +1,8 @@
 use crate::map::{
     self, StructureManager, get_neighbors, is_tile_passable, tile_pos_to_rounded_tile,
-    world_pos_to_tile,
+    world_pos_to_rounded_tile, world_pos_to_tile,
 };
-use crate::units::MovementSpeed;
-use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions};
+use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions_system};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
@@ -55,9 +54,8 @@ pub fn grid_to_tile_pos(grid_pos: IVec2) -> Vec2 {
 
 #[derive(Component)]
 pub struct PathfindingAgent {
-    pub target: Option<Vec2>,
-    pub path: VecDeque<Vec2>,
-    pub path_tolerance: f32,
+    pub target: Option<IVec2>,
+    pub path: VecDeque<IVec2>,
 }
 
 impl Default for PathfindingAgent {
@@ -65,7 +63,6 @@ impl Default for PathfindingAgent {
         PathfindingAgent {
             target: None,
             path: VecDeque::new(),
-            path_tolerance: 0.1, // 10% de la taille d'une tile
         }
     }
 }
@@ -95,24 +92,17 @@ fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) ->
     path
 }
 
-// Dans votre fonction find_path, remplacez cette partie :
-
-// Dans votre fonction find_path, remplacez cette partie :
-
 fn find_path(
-    start_pos: Vec2,
-    end_pos: Vec2,
+    // start_pos: IVec2,
+    // end_pos: IVec2,
+    start_grid: IVec2,
+    end_grid: IVec2,
     structure_manager: &Res<StructureManager>,
-) -> Option<VecDeque<Vec2>> {
-    let start_grid = tile_pos_to_rounded_tile(start_pos);
-    let end_grid = tile_pos_to_rounded_tile(end_pos);
+) -> Option<VecDeque<IVec2>> {
+    // let start_grid = tile_pos_to_rounded_tile(start_pos);
+    // let end_grid = tile_pos_to_rounded_tile(end_pos);
 
-    // ❌ ANCIEN CODE - causait le problème
-    // if !is_tile_passable(end_grid, structure_manager) {
-    //     return None;
-    // }
-
-    // ✅ NOUVEAU CODE - trouve la destination la plus proche si la cible n'est pas passable
+    //  trouve la destination la plus proche si la cible n'est pas passable
     let actual_end_grid = if !is_tile_passable(end_grid, structure_manager) {
         // Si la destination n'est pas passable, on cherche la case passable la plus proche
         // en tenant compte de la direction d'approche depuis start_grid
@@ -227,7 +217,7 @@ fn find_path(
     None
 }
 
-// ✅ NOUVELLE FONCTION - trouve la case passable la plus proche en privilégiant la direction d'approche
+// trouve la case passable la plus proche en privilégiant la direction d'approche
 fn find_nearest_passable_tile(
     target: IVec2,
     start: IVec2,
@@ -282,7 +272,6 @@ fn find_nearest_passable_tile(
 }
 
 // ========== SYSTÈMES BEVY ==========
-
 /// Système qui calcule le chemin pour les agents.
 pub fn pathfinding_system(
     mut agents_query: Query<(&mut PathfindingAgent, &Transform)>,
@@ -290,14 +279,11 @@ pub fn pathfinding_system(
 ) {
     for (mut agent, transform) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
-            // Convert transform -> tile pos once
-            let start_tile = world_pos_to_tile(transform.translation.xy());
-            // Recalculer le chemin si la cible a changé (chemin vide)
+            let start_tile = world_pos_to_rounded_tile(transform.translation.xy());
             if agent.path.is_empty() {
                 if let Some(new_path) = find_path(start_tile, target, &structure_manager) {
                     agent.path = new_path;
                 } else {
-                    // Impossible de trouver un chemin, on annule la cible.
                     agent.target = None;
                 }
             }
@@ -371,7 +357,7 @@ fn mouse_target_system(
 
     if let Some(cursor_pos) = window.cursor_position() {
         if let Ok(world_pos) = camera.viewport_to_world_2d(camera_transform, cursor_pos) {
-            let tile_pos = world_pos_to_tile(world_pos);
+            let tile_pos = world_pos_to_rounded_tile(world_pos);
             for (mut pathfinding_agent, mut current_action, mut action_queue) in
                 agents_query.iter_mut()
             {
@@ -391,13 +377,14 @@ impl Plugin for PathfindingPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(
             Update,
-            (
-                // pathfinding_system,
-                // movement_system,
-                mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
-            )
-                .chain(),
+            mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
         )
-        .add_systems(FixedUpdate, (pathfinding_system, movement_system).chain());
+        .add_systems(
+            FixedUpdate,
+            (
+                pathfinding_system,
+                movement_system.after(pathfinding_system),
+            ),
+        );
     }
 }
