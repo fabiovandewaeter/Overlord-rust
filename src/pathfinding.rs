@@ -1,3 +1,4 @@
+use crate::UPS_TARGET;
 use crate::map::{StructureManager, get_neighbors, is_tile_passable, world_pos_to_rounded_tile};
 use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions_system};
 use crate::units::{Direction, TileMovement};
@@ -5,6 +6,9 @@ use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
+
+// const LIMIT_STUCK_STICKS: u32 = UPS_TARGET as u32 * 10; // stops the pathfinding if stuck for too long
+const LIMIT_STUCK_STICKS: u32 = UPS_TARGET as u32 * 5; // stops the pathfinding if stuck for too long
 
 pub struct PathfindingPlugin;
 
@@ -61,10 +65,12 @@ impl PartialEq for PathNode {
 
 impl Eq for PathNode {}
 
-#[derive(Component)]
+#[derive(Component, Debug)]
 pub struct PathfindingAgent {
     pub target: Option<IVec2>,
     pub path: VecDeque<IVec2>,
+    pub last_tile_pos: Option<IVec2>,
+    pub stuck_ticks_counter: u32,
 }
 
 impl Default for PathfindingAgent {
@@ -72,6 +78,8 @@ impl Default for PathfindingAgent {
         PathfindingAgent {
             target: None,
             path: VecDeque::new(),
+            last_tile_pos: None,
+            stuck_ticks_counter: 0,
         }
     }
 }
@@ -80,6 +88,8 @@ impl PathfindingAgent {
     pub fn reset(&mut self) {
         self.target = None;
         self.path.clear();
+        self.last_tile_pos = None;
+        self.stuck_ticks_counter = 0;
     }
 }
 
@@ -288,7 +298,7 @@ pub fn pathfinding_system(
                 if let Some(new_path) = find_path(start_tile, target, &structure_manager) {
                     agent.path = new_path;
                 } else {
-                    agent.target = None;
+                    agent.reset();
                 }
             }
         }
@@ -303,12 +313,22 @@ pub fn movement_system(
         if let Some(&next_waypoint) = agent.path.front() {
             let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
-            // if distance <= agent.path_tolerance {
+            if let Some(last_tile_pos) = agent.last_tile_pos
+                && last_tile_pos == current_tile_pos
+            {
+                agent.stuck_ticks_counter += 1;
+            }
+
+            if agent.stuck_ticks_counter > LIMIT_STUCK_STICKS {
+                agent.reset();
+                continue;
+            }
+
             if current_tile_pos == next_waypoint {
                 agent.path.pop_front();
                 tile_movement.direction = Direction::Null;
                 if agent.path.is_empty() {
-                    agent.target = None;
+                    agent.reset();
                 }
                 continue;
             }
@@ -316,6 +336,7 @@ pub fn movement_system(
             let delta = next_waypoint - current_tile_pos;
             let step = IVec2::new(delta.x.signum(), delta.y.signum());
             tile_movement.direction = Direction::from(step);
+            agent.last_tile_pos = Some(current_tile_pos);
         } else {
             tile_movement.direction = Direction::Null;
         }
@@ -341,7 +362,6 @@ fn mouse_target_system(
             for (mut pathfinding_agent, mut current_action, mut action_queue) in
                 agents_query.iter_mut()
             {
-                println!("TEST");
                 reset_actions_system(
                     &mut action_queue,
                     &mut current_action,

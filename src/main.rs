@@ -1,7 +1,7 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
     map::{
-        Chest, ChunkManager, MapPlugin, Provider, Requester, Structure, StructureManager,
+        Chest, ChunkManager, Crafter, MapPlugin, Provider, Requester, Structure, StructureManager,
         TILE_SIZE, place_structure, rounded_tile_pos_to_world,
     },
     pathfinding::PathfindingPlugin,
@@ -14,6 +14,7 @@ use crate::{
     },
 };
 use bevy::{
+    color::palettes::css::GREEN,
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     input::{
         common_conditions::input_pressed,
@@ -117,8 +118,11 @@ fn setup(
     mut structure_manager: ResMut<StructureManager>,
     mut chunk_manager: ResMut<ChunkManager>,
 ) {
-    use bevy::color::palettes::css::GREEN;
     commands.spawn((Camera2d, Camera { ..default() }));
+    commands.spawn((
+        Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
+        MeshMaterial2d(materials.add(Color::from(GREEN))),
+    ));
 
     let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
@@ -130,7 +134,7 @@ fn setup(
         // uses Unit required componenents to make it easier
         commands.spawn((
             Unit {
-                name: "Player".into(),
+                name: "Unit".into(),
             },
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(0.0)),
@@ -141,22 +145,15 @@ fn setup(
     }
     let random_speed = u32::MAX;
     let world_pos = rounded_tile_pos_to_world(IVec2::new(5, 0));
-
     // uses Unit required componenents to make it easier
     commands.spawn((
         Unit {
-            name: "Player".into(),
+            name: "AFK Player".into(),
         },
         Sprite::from_image(player_texture_handle.clone()),
         Transform::from_translation(world_pos.extend(0.0)),
         TileMovement::new(random_speed),
-        // Available,
         UnitUnitCollisions,
-    ));
-
-    commands.spawn((
-        Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
-        MeshMaterial2d(materials.add(Color::from(GREEN))),
     ));
 
     // provider chest
@@ -168,7 +165,6 @@ fn setup(
             Chest,
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
-            Transform::from_xyz(0.0, 0.0, 0.0),
             Provider,
         ))
         .id();
@@ -191,7 +187,6 @@ fn setup(
             Chest,
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
-            Transform::from_xyz(0.0, 0.0, 0.0),
             Provider,
         ))
         .id();
@@ -214,7 +209,6 @@ fn setup(
             Chest,
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
-            Transform::from_xyz(0.0, 0.0, 0.0),
             Provider,
         ))
         .id();
@@ -237,7 +231,6 @@ fn setup(
             Chest,
             Sprite::from_image(asset_server.load("structures/chest.png")),
             inventory,
-            Transform::from_xyz(0.0, 0.0, 0.0),
             Requester,
         ))
         .id();
@@ -246,6 +239,24 @@ fn setup(
         &mut commands,
         &asset_server,
         &chest_entity,
+        &mut structure_manager,
+        &mut chunk_manager,
+        rounded_tile_pos,
+    );
+
+    // crafter
+    let crafter_entity = commands
+        .spawn((
+            Structure,
+            Crafter,
+            Sprite::from_image(asset_server.load("structures/crafter.png")),
+        ))
+        .id();
+    let rounded_tile_pos = IVec2::new(-3, 5);
+    place_structure(
+        &mut commands,
+        &asset_server,
+        &crafter_entity,
         &mut structure_manager,
         &mut chunk_manager,
         rounded_tile_pos,

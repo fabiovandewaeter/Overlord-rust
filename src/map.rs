@@ -46,8 +46,10 @@ pub struct StructureManager {
 pub struct Structure;
 
 #[derive(Component)]
-pub struct Chest;
+pub struct Wall;
 
+#[derive(Component)]
+pub struct Chest;
 // TODO: delete these two component and do something better
 #[derive(Component)]
 pub struct Provider;
@@ -55,7 +57,7 @@ pub struct Provider;
 pub struct Requester;
 
 #[derive(Component)]
-pub struct Wall;
+pub struct Crafter;
 
 pub fn spawn_chunk(
     commands: &mut Commands,
