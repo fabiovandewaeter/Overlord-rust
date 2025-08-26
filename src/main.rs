@@ -19,7 +19,7 @@ use bevy::{
     prelude::*,
     time::common_conditions::on_timer,
 };
-use rand::{Rng, rng};
+use rand::rng;
 use std::time::Duration;
 
 mod items;
@@ -27,7 +27,7 @@ mod map;
 // mod pathfinding;
 mod units;
 
-const TARGET_UPS: f64 = 30.0;
+pub const UPS_TARGET: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
 const CAMERA_SPEED: f32 = 37.5;
@@ -79,7 +79,8 @@ fn setup(
     let player_texture_handle = asset_server.load("default.png");
     for _i in 0..1 {
         // let random_speed = rng.random_range(1.0..2.0);
-        let random_speed = 20.0;
+        // let random_speed = 2.0;
+        let random_speed = UPS_TARGET as u32;
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // uses Unit required componenents to make it easier
@@ -94,7 +95,7 @@ fn setup(
             UnitUnitCollisions,
         ));
     }
-    let random_speed = 0.0;
+    let random_speed = u32::MAX;
     let world_pos = rounded_tile_pos_to_world(IVec2::new(5, 0));
 
     // uses Unit required componenents to make it easier
@@ -271,6 +272,57 @@ fn handle_camera_inputs(
     }
 }
 
+#[derive(Resource, Default)]
+struct TimeState {
+    is_paused: bool,
+}
+
+fn control_time_system(
+    mut fixed_time: ResMut<Time<Fixed>>,
+    input: Res<ButtonInput<KeyCode>>,
+    mut time_state: ResMut<TimeState>,
+) {
+    // P pour Pause, pour alterner entre l'état de pause
+    if input.just_pressed(KeyCode::KeyP) {
+        if time_state.is_paused {
+            println!("Temps de la simulation repris.");
+            fixed_time.set_timestep_hz(UPS_TARGET);
+            time_state.is_paused = false;
+        } else {
+            println!("Temps de la simulation mis en pause.");
+            fixed_time.set_timestep_hz(0.0);
+            time_state.is_paused = true;
+        }
+    }
+
+    // Si le jeu est en pause, on ne gère pas les autres commandes de vitesse
+    if time_state.is_paused {
+        return;
+    }
+
+    // A pour Accélérer (x2)
+    if input.just_pressed(KeyCode::KeyA) {
+        let current_hz = fixed_time.timestep().as_secs_f64().recip();
+        let new_hz = current_hz * 2.0;
+        println!("Temps de la simulation accéléré à {} Hz.", new_hz);
+        fixed_time.set_timestep_hz(new_hz);
+    }
+
+    // R pour Ralentir (/2)
+    if input.just_pressed(KeyCode::KeyR) {
+        let current_hz = fixed_time.timestep().as_secs_f64().recip();
+        let new_hz = current_hz / 2.0;
+        println!("Temps de la simulation ralenti à {} Hz.", new_hz);
+        fixed_time.set_timestep_hz(new_hz);
+    }
+
+    // N pour Normal (retour à la vitesse initiale)
+    if input.just_pressed(KeyCode::KeyN) {
+        println!("Temps de la simulation réinitialisé à {} Hz.", UPS_TARGET);
+        fixed_time.set_timestep_hz(UPS_TARGET);
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
@@ -285,14 +337,18 @@ fn main() {
         .add_plugins(MapPlugin)
         // .add_plugins(PathfindingPlugin)
         // .add_plugins(TasksPlugin)
+        .insert_resource(TimeState::default())
         .insert_resource(UpsCounter {
             ticks: 0,
             last_second: 0.0,
             ups: 0,
         })
-        .insert_resource(Time::<Fixed>::from_hz(TARGET_UPS))
+        .insert_resource(Time::<Fixed>::from_hz(UPS_TARGET))
         .add_systems(Startup, setup)
-        .add_systems(Update, (handle_camera_inputs, display_fps_ups))
+        .add_systems(
+            Update,
+            (handle_camera_inputs, display_fps_ups, control_time_system),
+        )
         .add_systems(
             FixedUpdate,
             (

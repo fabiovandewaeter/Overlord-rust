@@ -1,21 +1,19 @@
 use std::collections::HashSet;
 
 use crate::{
+    UPS_TARGET, // pathfinding::PathfindingAgent,
+    // units::tasks::{ActionQueue, CurrentAction, CurrentTask},
     UpsCounter,
     items::Inventory,
     map::{
         StructureManager, TILE_SIZE, get_neighbors, is_tile_passable, rounded_tile_pos_to_world,
         world_pos_to_rounded_tile,
     },
-    // pathfinding::PathfindingAgent,
-    // units::tasks::{ActionQueue, CurrentAction, CurrentTask},
 };
 use bevy::prelude::*;
 
 pub const UNIT_REACH: u8 = 1;
-// pub const UNIT_DEFAULT_MOVEMENT_SPEED: f32 = 5.0;
-pub const UNIT_DEFAULT_MOVEMENT_SPEED: f32 = 2.0; // 2 tiles per second
-// pub const UNIT_DEFAULT_ROTATION_SPEED: f32 = f32::to_radians(360.0);
+pub const UNIT_DEFAULT_MOVEMENT_SPEED: u32 = UPS_TARGET as u32; // ticks per tile ; smaller is faster (here its 1 tile per second at normal tickrate by default)
 
 #[derive(Component, Debug, Default)]
 #[require(
@@ -32,54 +30,80 @@ pub struct Unit {
     pub name: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Null,
+    NorthWest,
+    North,
+    NorthEast,
+    East,
+    SouthEast,
+    South,
+    SouthWest,
+    West,
+}
+
+impl Direction {
+    /// Retourne le déplacement (dx, dy) associé à la direction
+    pub fn delta(&self) -> IVec2 {
+        match self {
+            Direction::Null => IVec2::ZERO,
+            Direction::NorthWest => IVec2::new(-1, 1),
+            Direction::North => IVec2::new(0, 1),
+            Direction::NorthEast => IVec2::new(1, 1),
+            Direction::East => IVec2::new(1, 0),
+            Direction::SouthEast => IVec2::new(1, -1),
+            Direction::South => IVec2::new(0, -1),
+            Direction::SouthWest => IVec2::new(-1, -1),
+            Direction::West => IVec2::new(-1, 0),
+        }
+    }
+
+    pub fn from(delta: IVec2) -> Self {
+        match delta {
+            IVec2 { x: 0, y: 0 } => Direction::Null,
+            IVec2 { x: -1, y: 1 } => Direction::NorthWest,
+            IVec2 { x: 0, y: 1 } => Direction::North,
+            IVec2 { x: 1, y: 1 } => Direction::NorthEast,
+            IVec2 { x: 1, y: 0 } => Direction::East,
+            IVec2 { x: 1, y: -1 } => Direction::SouthEast,
+            IVec2 { x: 0, y: -1 } => Direction::South,
+            IVec2 { x: -1, y: -1 } => Direction::SouthWest,
+            IVec2 { x: -1, y: 0 } => Direction::West,
+            _ => Direction::Null, // if direction is wrong
+        }
+    }
+}
+
 #[derive(Component)]
 pub struct TileMovement {
-    pub desired_target_tile: Option<IVec2>,
-    pub movement_speed: f32,
-    pub move_timer: Timer,
+    pub direction: Direction,
+    pub ticks_per_tile: u32, // movement speed ; smaller is faster
+    pub tick_counter: u32,
 }
 
 impl Default for TileMovement {
     fn default() -> Self {
         Self {
-            desired_target_tile: None,
-            movement_speed: UNIT_DEFAULT_MOVEMENT_SPEED,
-            move_timer: Timer::from_seconds(1.0 / UNIT_DEFAULT_MOVEMENT_SPEED, TimerMode::Once),
+            direction: Direction::Null,
+            ticks_per_tile: UNIT_DEFAULT_MOVEMENT_SPEED,
+            tick_counter: 0,
         }
     }
 }
 
 impl TileMovement {
-    pub fn new(movement_speed: f32) -> Self {
-        let frequency = if movement_speed > 0.0 {
-            1.0 / movement_speed
-        } else {
-            1000.0
-        };
+    pub fn new(ticks_per_tile: u32) -> Self {
         Self {
-            desired_target_tile: None,
-            movement_speed,
-            move_timer: Timer::from_seconds(frequency, TimerMode::Once), // 0.5 sec par case par défaut
+            direction: Direction::Null,
+            ticks_per_tile,
+            tick_counter: 0,
         }
     }
 
-    pub fn update_speed(&mut self, new_speed: f32) {
-        self.movement_speed = new_speed;
-        let frequency = if self.movement_speed > 0.0 {
-            1.0 / self.movement_speed
-        } else {
-            1000.0
-        };
-        self.move_timer = Timer::from_seconds(frequency, TimerMode::Once);
-    }
-
-    pub fn reset_timer(&mut self) {
-        let frequency = if self.movement_speed > 0.0 {
-            1.0 / self.movement_speed
-        } else {
-            1000.0
-        };
-        self.move_timer = Timer::from_seconds(frequency, TimerMode::Once);
+    pub fn update_speed(&mut self, ticks_per_tile: u32) {
+        self.ticks_per_tile = ticks_per_tile;
+        self.tick_counter = 0;
     }
 }
 
@@ -89,7 +113,6 @@ pub struct UnitUnitCollisions;
 
 pub fn move_and_collide_units_system(
     structure_manager: Res<StructureManager>,
-    // occupied_query: Query<&Transform, (With<Unit>, With<UnitUnitCollisions>)>,
     mut unit_query: Query<
         (
             &mut Transform,
@@ -98,7 +121,6 @@ pub fn move_and_collide_units_system(
         ),
         With<Unit>,
     >,
-    time: Res<Time>,
 ) {
     // all tiles occupied by units
     let mut occupied_tiles: HashSet<IVec2> = HashSet::new();
@@ -110,27 +132,34 @@ pub fn move_and_collide_units_system(
     }
 
     for (mut transform, mut tile_movement, unit_unit_collisions) in unit_query.iter_mut() {
-        tile_movement.move_timer.tick(time.delta());
-        if let Some(desired_target_tile) = tile_movement.desired_target_tile {
-            if tile_movement.move_timer.finished() {
-                // if there is a structure
-                if !is_tile_passable(desired_target_tile, &structure_manager) {
-                    tile_movement.desired_target_tile = None;
-                    continue;
-                }
+        if tile_movement.direction == Direction::Null {
+            continue;
+        }
 
-                // if there is a unit with collisions and current unit has collisions too
-                if occupied_tiles.contains(&desired_target_tile) && unit_unit_collisions.is_some() {
-                    tile_movement.desired_target_tile = None;
-                    continue;
-                }
+        tile_movement.tick_counter += 1;
 
-                let target_world_pos = rounded_tile_pos_to_world(desired_target_tile);
-                transform.translation.x = target_world_pos.x;
-                transform.translation.y = target_world_pos.y;
+        if tile_movement.tick_counter >= tile_movement.ticks_per_tile {
+            tile_movement.tick_counter = 0;
 
-                tile_movement.desired_target_tile = None;
+            let current_tile = world_pos_to_rounded_tile(transform.translation.xy());
+            let desired_target_tile = current_tile + tile_movement.direction.delta();
+            // if there is a structure
+            if !is_tile_passable(desired_target_tile, &structure_manager) {
+                tile_movement.direction = Direction::Null;
+                continue;
             }
+
+            // if there is a unit with collisions and current unit has collisions too
+            if occupied_tiles.contains(&desired_target_tile) && unit_unit_collisions.is_some() {
+                tile_movement.direction = Direction::Null;
+                continue;
+            }
+
+            let target_world_pos = rounded_tile_pos_to_world(desired_target_tile);
+            transform.translation.x = target_world_pos.x;
+            transform.translation.y = target_world_pos.y;
+
+            tile_movement.direction = Direction::Null;
         }
     }
 }
@@ -156,42 +185,43 @@ pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
 pub fn test_units_control_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     mut unit_query: Query<(&Transform, &mut TileMovement), With<Unit>>,
-    time: Res<Time>,
 ) {
     for (transform, mut tile_movement) in unit_query.iter_mut() {
-        if tile_movement.desired_target_tile.is_some() {
-            continue;
-        }
+        // if tile_movement.direction != Direction::Null {
+        //     continue;
+        // }
 
         let mut delta = IVec2::new(0, 0);
         if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            // delta.x -= tile_movement.movement_speed as i32;
             delta.x -= 1;
         }
 
         if keyboard_input.pressed(KeyCode::ArrowRight) {
-            // delta.x += tile_movement.movement_speed as i32;
             delta.x += 1;
         }
 
         if keyboard_input.pressed(KeyCode::ArrowUp) {
-            // delta.y += tile_movement.movement_speed as i32;
             delta.y += 1;
         }
 
         if keyboard_input.pressed(KeyCode::ArrowDown) {
-            // delta.y -= tile_movement.movement_speed as i32;
             delta.y -= 1;
         }
 
-        if delta == IVec2::ZERO {
+        // if delta == IVec2::ZERO {
+        //     continue;
+        // }
+
+        let new_direction = Direction::from(delta);
+        if tile_movement.direction == new_direction {
             continue;
         }
 
-        let current_tile = world_pos_to_rounded_tile(transform.translation.xy());
-        let target_tile = current_tile + delta;
+        tile_movement.direction = new_direction;
+        // tile_movement.tick_counter = 0;
 
-        tile_movement.desired_target_tile = Some(target_tile);
-        tile_movement.reset_timer();
+        println!("{:?}", tile_movement.direction);
     }
 }
+
+// utiliser le tickrate au lieu des secondes pour les déplacements
