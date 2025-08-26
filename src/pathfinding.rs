@@ -1,14 +1,28 @@
-use crate::map::{
-    self, StructureManager, get_neighbors, is_tile_passable, tile_pos_to_rounded_tile,
-    world_pos_to_rounded_tile, world_pos_to_tile,
-};
+use crate::map::{StructureManager, get_neighbors, is_tile_passable, world_pos_to_rounded_tile};
 use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions_system};
+use crate::units::{Direction, TileMovement};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
 use std::collections::{BinaryHeap, HashMap, VecDeque};
 
 pub struct PathfindingPlugin;
+
+impl Plugin for PathfindingPlugin {
+    fn build(&self, app: &mut App) {
+        app.add_systems(
+            Update,
+            mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                pathfinding_system,
+                movement_system.after(pathfinding_system),
+            ),
+        );
+    }
+}
 
 #[derive(Clone)]
 struct PathNode {
@@ -23,6 +37,7 @@ impl PathNode {
         self.g_cost + self.h_cost
     }
 }
+
 impl Ord for PathNode {
     fn cmp(&self, other: &Self) -> Ordering {
         other
@@ -31,26 +46,20 @@ impl Ord for PathNode {
             .unwrap_or(Ordering::Equal)
     }
 }
+
 impl PartialOrd for PathNode {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }
+
 impl PartialEq for PathNode {
     fn eq(&self, other: &Self) -> bool {
         self.pos == other.pos
     }
 }
+
 impl Eq for PathNode {}
-
-// ========== FONCTIONS UTILITAIRES ==========
-
-/// Convertit une position de grille A* en position logique (centre de la tuile).
-pub fn grid_to_tile_pos(grid_pos: IVec2) -> Vec2 {
-    Vec2::new(grid_pos.x as f32 + 0.5, grid_pos.y as f32 + 0.5)
-}
-
-// ========== PATHFINDING UTILISANT DIRECTEMENT VOTRE TILEMAP ==========
 
 #[derive(Component)]
 pub struct PathfindingAgent {
@@ -67,8 +76,14 @@ impl Default for PathfindingAgent {
     }
 }
 
-/// checks if there is a structure at rounded_tile_pos
+impl PathfindingAgent {
+    pub fn reset(&mut self) {
+        self.target = None;
+        self.path.clear();
+    }
+}
 
+// ========== FONCTIONS UTILITAIRES ==========
 fn is_diagonal(from: IVec2, to: IVec2) -> bool {
     (from.x - to.x).abs() == 1 && (from.y - to.y).abs() == 1
 }
@@ -79,10 +94,10 @@ fn heuristic(a: IVec2, b: IVec2) -> f32 {
     (dx * dx + dy * dy).sqrt()
 }
 
-fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) -> VecDeque<Vec2> {
+fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) -> VecDeque<IVec2> {
     let mut path = VecDeque::new();
     while let Some(node) = all_nodes.get(&current) {
-        path.push_front(grid_to_tile_pos(node.pos));
+        path.push_front(node.pos);
         if let Some(parent) = node.parent {
             current = parent;
         } else {
@@ -93,27 +108,17 @@ fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) ->
 }
 
 fn find_path(
-    // start_pos: IVec2,
-    // end_pos: IVec2,
     start_grid: IVec2,
     end_grid: IVec2,
     structure_manager: &Res<StructureManager>,
 ) -> Option<VecDeque<IVec2>> {
-    // let start_grid = tile_pos_to_rounded_tile(start_pos);
-    // let end_grid = tile_pos_to_rounded_tile(end_pos);
-
-    //  trouve la destination la plus proche si la cible n'est pas passable
+    // if target not reachable, find nearest passable tile
     let actual_end_grid = if !is_tile_passable(end_grid, structure_manager) {
-        // Si la destination n'est pas passable, on cherche la case passable la plus proche
-        // en tenant compte de la direction d'approche depuis start_grid
         find_nearest_passable_tile(end_grid, start_grid, structure_manager).unwrap_or(start_grid)
     } else {
         end_grid
     };
 
-    // -------------------------
-    // Configuration de la limite (reste identique)
-    // -------------------------
     const BASE_LIMIT: usize = 500;
     const PER_TILE_LIMIT: usize = 40;
     const MAX_LIMIT: usize = 20_000;
@@ -128,7 +133,7 @@ fn find_path(
     let return_partial_on_limit = true;
 
     // -------------------------
-    // A* habituel (reste identique, mais utilise actual_end_grid)
+    // A* pathfinding
     // -------------------------
     let mut open_set = BinaryHeap::new();
     let mut all_nodes: HashMap<IVec2, PathNode> = HashMap::new();
@@ -136,7 +141,7 @@ fn find_path(
     let start_node = PathNode {
         pos: start_grid,
         g_cost: 0.0,
-        h_cost: heuristic(start_grid, actual_end_grid), // ← Utilise actual_end_grid
+        h_cost: heuristic(start_grid, actual_end_grid),
         parent: None,
     };
     open_set.push(start_node.clone());
@@ -162,7 +167,6 @@ fn find_path(
         }
 
         if current_node.pos == actual_end_grid {
-            // ← Utilise actual_end_grid
             return Some(reconstruct_path(&all_nodes, actual_end_grid));
         }
 
@@ -291,58 +295,34 @@ pub fn pathfinding_system(
     }
 }
 
-/// makes the entiry moves along the path ; sets CurrentAction.0 to None when reached target
+/// makes the entiry moves along the path
 pub fn movement_system(
-    mut agents_query: Query<(
-        &mut PathfindingAgent,
-        &MovementSpeed,
-        &mut Transform,
-        // &mut CurrentAction,
-    )>,
-    time: Res<Time>,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut TileMovement, &Transform)>,
 ) {
-    // for (mut agent, movement_speed, mut transform, mut current_action) in agents_query.iter_mut() {
-    for (mut agent, movement_speed, mut transform) in agents_query.iter_mut() {
+    for (mut agent, mut tile_movement, transform) in agents_query.iter_mut() {
         if let Some(&next_waypoint) = agent.path.front() {
-            let current_tile_pos = world_pos_to_tile(transform.translation.xy());
-            let distance = current_tile_pos.distance(next_waypoint);
+            let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
-            if distance <= agent.path_tolerance {
-                // Waypoint atteint, on le retire et passe au suivant
+            // if distance <= agent.path_tolerance {
+            if current_tile_pos == next_waypoint {
                 agent.path.pop_front();
+                tile_movement.direction = Direction::Null;
                 if agent.path.is_empty() {
-                    agent.target = None; // Destination finale atteinte
-                    // current_action.action = None;
+                    agent.target = None;
                 }
-            } else {
-                // Se déplacer vers le waypoint
-                let direction = (next_waypoint - current_tile_pos).normalize_or_zero();
-
-                // Calculer la distance restante au waypoint
-                let remaining_distance = current_tile_pos.distance(next_waypoint);
-                let max_movement = movement_speed.0 * time.delta_secs();
-
-                // Ne pas dépasser le waypoint
-                let movement_distance = max_movement.min(remaining_distance);
-                let movement_tiles = direction * movement_distance;
-                // move in pixels: convert tile movement to pixels
-                // let movement_tiles = direction * movement_speed.0 * time.delta_secs();
-                let movement_pixels =
-                    movement_tiles * Vec2::new(map::TILE_SIZE.x, map::TILE_SIZE.y);
-                transform.translation.x += movement_pixels.x;
-                transform.translation.y += movement_pixels.y;
-
-                // Rotation du sprite
-                if direction != Vec2::ZERO {
-                    let angle = direction.y.atan2(direction.x) - std::f32::consts::FRAC_PI_2;
-                    transform.rotation = Quat::from_rotation_z(angle);
-                }
+                continue;
             }
+
+            let delta = next_waypoint - current_tile_pos;
+            let step = IVec2::new(delta.x.signum(), delta.y.signum());
+            tile_movement.direction = Direction::from(step);
+        } else {
+            tile_movement.direction = Direction::Null;
         }
     }
 }
 
-/// Système pour définir une cible avec le clic droit de la souris.
+/// Mouse targetting: set agent target on right click; reset actions (uses function from tasks)
 fn mouse_target_system(
     mut agents_query: Query<(&mut PathfindingAgent, &mut CurrentAction, &mut ActionQueue)>,
     windows: Query<&Window>,
@@ -361,30 +341,15 @@ fn mouse_target_system(
             for (mut pathfinding_agent, mut current_action, mut action_queue) in
                 agents_query.iter_mut()
             {
-                reset_actions(
-                    &mut *action_queue,
-                    &mut *current_action,
-                    &mut *pathfinding_agent,
+                println!("TEST");
+                reset_actions_system(
+                    &mut action_queue,
+                    &mut current_action,
+                    &mut pathfinding_agent,
                 );
+                pathfinding_agent.reset();
                 pathfinding_agent.target = Some(tile_pos);
-                pathfinding_agent.path.clear(); // Force le recalcul du chemin
             }
         }
-    }
-}
-
-impl Plugin for PathfindingPlugin {
-    fn build(&self, app: &mut App) {
-        app.add_systems(
-            Update,
-            mouse_target_system.run_if(input_just_pressed(MouseButton::Right)),
-        )
-        .add_systems(
-            FixedUpdate,
-            (
-                pathfinding_system,
-                movement_system.after(pathfinding_system),
-            ),
-        );
     }
 }

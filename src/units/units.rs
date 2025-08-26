@@ -1,14 +1,14 @@
 use std::collections::HashSet;
 
 use crate::{
-    UPS_TARGET, // pathfinding::PathfindingAgent,
-    // units::tasks::{ActionQueue, CurrentAction, CurrentTask},
-    UpsCounter,
+    UPS_TARGET, UpsCounter,
     items::Inventory,
     map::{
         StructureManager, TILE_SIZE, get_neighbors, is_tile_passable, rounded_tile_pos_to_world,
         world_pos_to_rounded_tile,
     },
+    pathfinding::PathfindingAgent,
+    units::tasks::{ActionQueue, CurrentAction, CurrentTask},
 };
 use bevy::prelude::*;
 
@@ -20,11 +20,11 @@ pub const UNIT_DEFAULT_MOVEMENT_SPEED: u32 = UPS_TARGET as u32; // ticks per til
     Sprite,
     Transform,
     TileMovement,
-    // PathfindingAgent,
+    PathfindingAgent,
     Inventory,
-    // ActionQueue,
-    // CurrentAction,
-    // CurrentTask
+    ActionQueue,
+    CurrentAction,
+    CurrentTask
 )]
 pub struct Unit {
     pub name: String,
@@ -164,15 +164,15 @@ pub fn move_and_collide_units_system(
     }
 }
 
-// pub fn display_units_with_no_current_action_system(unit_query: Query<&CurrentAction, With<Unit>>) {
-//     let mut counter = 0;
-//     for current_action in unit_query.iter() {
-//         if current_action.action.is_none() {
-//             counter += 1;
-//         }
-//     }
-//     println!("Counter units with no current action: {}", counter);
-// }
+pub fn display_units_with_no_current_action_system(unit_query: Query<&CurrentAction, With<Unit>>) {
+    let mut counter = 0;
+    for current_action in unit_query.iter() {
+        if current_action.action.is_none() {
+            counter += 1;
+        }
+    }
+    println!("Counter units with no current action: {}", counter);
+}
 
 pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
     for inventory in unit_query.iter() {
@@ -184,33 +184,22 @@ pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
 
 pub fn test_units_control_system(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut unit_query: Query<(&Transform, &mut TileMovement), With<Unit>>,
+    mut unit_query: Query<&mut TileMovement, With<Unit>>,
 ) {
-    for (transform, mut tile_movement) in unit_query.iter_mut() {
-        // if tile_movement.direction != Direction::Null {
-        //     continue;
-        // }
-
+    for mut tile_movement in unit_query.iter_mut() {
         let mut delta = IVec2::new(0, 0);
         if keyboard_input.pressed(KeyCode::ArrowLeft) {
             delta.x -= 1;
         }
-
         if keyboard_input.pressed(KeyCode::ArrowRight) {
             delta.x += 1;
         }
-
         if keyboard_input.pressed(KeyCode::ArrowUp) {
             delta.y += 1;
         }
-
         if keyboard_input.pressed(KeyCode::ArrowDown) {
             delta.y -= 1;
         }
-
-        // if delta == IVec2::ZERO {
-        //     continue;
-        // }
 
         let new_direction = Direction::from(delta);
         if tile_movement.direction == new_direction {
@@ -218,10 +207,5 @@ pub fn test_units_control_system(
         }
 
         tile_movement.direction = new_direction;
-        // tile_movement.tick_counter = 0;
-
-        println!("{:?}", tile_movement.direction);
     }
 }
-
-// utiliser le tickrate au lieu des secondes pour les déplacements

@@ -1,6 +1,6 @@
 use crate::{
     items::{CraftRecipeId, Inventory, ItemKind},
-    map::{Chest, Provider, Requester, world_pos_to_tile},
+    map::{Chest, Provider, Requester, world_pos_to_rounded_tile},
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units_system, states::Available},
 };
@@ -11,28 +11,45 @@ use std::{
 };
 
 // TODO: see how to remove that
-const BONUS_RANGE: f32 = 0.8;
+// const BONUS_RANGE: f32 = 0.8;
 const MAX_TASKS_RETRIES: u32 = 3;
 
 pub struct TasksPlugin;
 
+impl Plugin for TasksPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.insert_resource(Reservations::default()).add_systems(
+            FixedUpdate,
+            (
+                actions_decompose_planner_system.before(process_current_action_system),
+                process_current_action_system.before(move_and_collide_units_system),
+                update_task_completion_system.after(process_current_action_system),
+                assign_next_action_or_set_available_system,
+                // tests:
+                test_find_2_rocks_system.run_if(input_pressed(KeyCode::KeyE)),
+                test_deliver_2_rocks_system.run_if(input_pressed(KeyCode::KeyR)),
+            ),
+        );
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Action {
-    MoveTo(Vec2),
+    MoveTo(IVec2),
     Craft {
         recipe: CraftRecipeId,
-        quantity: u32, // while enough items
-        with: Entity,  // crafting machine
+        quantity: u32,
+        with: Entity, // crafting machine
     },
     Take {
         kind: ItemKind,
         quantity: u32,
-        from: Entity,
+        from: Entity, // chest
     },
     Drop {
         kind: ItemKind,
         quantity: u32,
-        to: Entity,
+        to: Entity, // chest
     },
 }
 
@@ -88,6 +105,13 @@ impl Task {
 pub struct CurrentTask {
     pub task: Option<Task>,
     pub initialized: bool,
+}
+
+impl CurrentTask {
+    pub fn reset(&mut self) {
+        self.task = None;
+        self.initialized = false;
+    }
 }
 
 #[derive(Resource, Default)]
@@ -187,6 +211,14 @@ impl Reservations {
 }
 // =================================================================
 
+// TODO: change that to use tiles distance instead
+// util: distance between tiles (euclidean)
+fn tile_distance(a: IVec2, b: IVec2) -> f32 {
+    let dx = (a.x - b.x) as f32;
+    let dy = (a.y - b.y) as f32;
+    (dx * dx + dy * dy).sqrt()
+}
+
 /// Planner: decompose Task -> Actions and attempt reservations.
 /// It runs on units that have a CurrentTask (Pending) and an ActionQueue.
 fn actions_decompose_planner_system(
@@ -222,7 +254,6 @@ fn actions_decompose_planner_system(
         let Some(task) = &mut current_task.task else {
             continue;
         };
-
         // Only decompose pending tasks
         if task.status != TaskStatus::Pending {
             continue;
@@ -236,9 +267,8 @@ fn actions_decompose_planner_system(
                     task.status = TaskStatus::Completed;
                     continue;
                 }
-
                 let needed = quantity - have;
-                let unit_tile_pos = world_pos_to_tile(transform.translation.xy());
+                let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
                 // find best chest taking into account reservations
                 if let Some((chest_ent, chest_tile_pos, available)) = find_best_chest(
@@ -267,36 +297,24 @@ fn actions_decompose_planner_system(
                             // mark planned so we don't plan again until this task changes
                             task.status = TaskStatus::Planned;
                             current_task.initialized = true;
-
-                            // ensure unit is marked as busy
                             commands.entity(unit_ent).remove::<Available>();
                         } else {
-                            // couldn't reserve (race or insufficient free after reservations)
                             task.status = TaskStatus::Failed;
-                            println!(
-                                "reservation failed for unit {:?} chest {:?}",
-                                unit_ent, chest_ent
-                            );
-                            // cleanup any leftover reservations for this owner
                             reservations.release_all_for_owner(unit_ent);
                         }
                     } else {
-                        // chest disappeared between find and reservation
                         task.status = TaskStatus::Failed;
                     }
                 } else {
-                    // no chest found with any stock; fallback could be craft — here we mark Failed
                     task.status = TaskStatus::Failed;
                 }
             }
 
             TaskKind::DeliverItems { kind, quantity } => {
-                // find a requester chest (here we assume single-requester scenario)
                 if let Ok((requester_ent, requester_global_tf, _req_inv)) =
                     requester_chest_query.single()
                 {
-                    let req_pos = world_pos_to_tile(requester_global_tf.translation().xy());
-                    // plan MoveTo -> Drop
+                    let req_pos = world_pos_to_rounded_tile(requester_global_tf.translation().xy());
                     action_queue.0.push_back(Action::MoveTo(req_pos));
                     action_queue.0.push_back(Action::Drop {
                         kind,
@@ -308,13 +326,11 @@ fn actions_decompose_planner_system(
                     current_task.initialized = true;
                     commands.entity(unit_ent).remove::<Available>();
                 } else {
-                    // no requester available
                     task.status = TaskStatus::Failed;
                 }
             }
 
             TaskKind::Action(_) => {
-                // If it's a direct action wrapped as a Task, push it to ActionQueue
                 if let TaskKind::Action(action) = task.kind {
                     action_queue.0.push_back(action);
                     task.status = TaskStatus::Planned;
@@ -334,9 +350,7 @@ pub fn reset_actions_system(
     if let Some(action) = &current_action.action {
         match action {
             Action::MoveTo(_) => {
-                // resets pathfinding_agent
-                pathfinding_agent.target = None;
-                pathfinding_agent.path.clear();
+                pathfinding_agent.reset();
             }
             _ => {}
         };
@@ -395,16 +409,15 @@ pub fn process_current_action_system(
     for (unit_ent, unit_transform, mut unit_inventory, mut current_action, mut pathfinding_agent) in
         unit_query.iter_mut()
     {
-        // skip if there is no current action
         if current_action.action.is_none() {
             continue;
         }
-        // initialize if not initialized yet
         if !current_action.initialized {
             match &current_action.action {
                 Some(Action::MoveTo(target_pos)) => {
+                    pathfinding_agent.reset();
                     pathfinding_agent.target = Some(*target_pos);
-                    pathfinding_agent.path.clear();
+                    // pathfinding_agent.path.clear();
                 }
                 _ => {}
             }
@@ -414,14 +427,15 @@ pub fn process_current_action_system(
         if let Some(action) = &mut current_action.action {
             match action {
                 Action::MoveTo(target_pos) => {
-                    let current_unit_tile_pos = world_pos_to_tile(unit_transform.translation.xy());
-                    let distance = current_unit_tile_pos.distance(*target_pos);
+                    let current_unit_tile_pos =
+                        world_pos_to_rounded_tile(unit_transform.translation.xy());
+                    // let distance = current_unit_tile_pos.distance(*target_pos);
+                    let distance = tile_distance(current_unit_tile_pos, *target_pos);
 
                     // Si on est assez proche de la destination, considérer la tâche terminée
-                    if pathfinding_agent.path.is_empty() && distance <= BONUS_RANGE + UNIT_REACH {
+                    if pathfinding_agent.path.is_empty() && distance as u8 <= UNIT_REACH {
                         current_action.action = None;
-                        pathfinding_agent.target = None;
-                        pathfinding_agent.path.clear();
+                        pathfinding_agent.reset();
                     }
                 }
 
@@ -436,12 +450,12 @@ pub fn process_current_action_system(
                     {
                         // checks if the target is at reach
                         let current_target_tile_pos =
-                            world_pos_to_tile(global_transform.translation().xy());
+                            world_pos_to_rounded_tile(global_transform.translation().xy());
                         let current_unit_tile_pos =
-                            world_pos_to_tile(unit_transform.translation.xy());
-                        let distance = current_target_tile_pos.distance(current_unit_tile_pos);
-                        if distance > BONUS_RANGE + UNIT_REACH {
-                            // can't reach right now -> cancel this current action (may re-try later)
+                            world_pos_to_rounded_tile(unit_transform.translation.xy());
+                        let distance =
+                            tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        if distance as u8 > UNIT_REACH {
                             current_action.action = None;
                             continue;
                         }
@@ -449,9 +463,7 @@ pub fn process_current_action_system(
                         let available_quantity = provider_inventory.count(kind);
                         let quantity_to_take = min(*quantity, available_quantity);
 
-                        // skip if there is no items left to take
                         if quantity_to_take == 0 {
-                            // nothing to take -> release reservation for the requested amount (if any)
                             let reserved_by_owner =
                                 reservations.owner_reserved(unit_ent, *from, *kind);
                             if reserved_by_owner > 0 {
@@ -461,22 +473,15 @@ pub fn process_current_action_system(
                             continue;
                         }
 
-                        // do the transfer (provider -> unit)
                         provider_inventory.remove(kind, quantity_to_take);
                         unit_inventory.add(*kind, quantity_to_take);
 
-                        // reduce reservation of owner by the amount actually taken
                         let reserved_by_owner = reservations.owner_reserved(unit_ent, *from, *kind);
                         if reserved_by_owner > 0 {
-                            // consume up to quantity_to_take from the reservation
-                            let to_release = std::cmp::min(reserved_by_owner, quantity_to_take);
+                            let to_release = min(reserved_by_owner, quantity_to_take);
                             reservations.release(unit_ent, *from, *kind, to_release);
-                            // remainder (if any) stays reserved (maybe for another scheduled Take)
                         }
-                    } else {
-                        // chest not found / disappeared: cancel current action
                     }
-                    // whether succeeded or not, end the action (executor will continue)
                     current_action.action = None;
                 }
 
@@ -486,11 +491,12 @@ pub fn process_current_action_system(
                     {
                         // checks if the target is at reach
                         let current_target_tile_pos =
-                            world_pos_to_tile(global_transform.translation().xy());
+                            world_pos_to_rounded_tile(global_transform.translation().xy());
                         let current_unit_tile_pos =
-                            world_pos_to_tile(unit_transform.translation.xy());
-                        let distance = current_target_tile_pos.distance(current_unit_tile_pos);
-                        if distance > BONUS_RANGE + UNIT_REACH {
+                            world_pos_to_rounded_tile(unit_transform.translation.xy());
+                        let distance =
+                            tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        if distance as u8 > UNIT_REACH {
                             current_action.action = None;
                             continue;
                         }
@@ -498,7 +504,6 @@ pub fn process_current_action_system(
                         let available_quantity = unit_inventory.count(kind);
                         let quantity_to_take = min(*quantity, available_quantity);
 
-                        // skip if there is no items left to take
                         if quantity_to_take == 0 {
                             current_action.action = None;
                             continue;
@@ -515,7 +520,8 @@ pub fn process_current_action_system(
                     quantity: _,
                     with: _,
                 } => {
-                    // craft unimplemented in this snippet
+                    // TODO: do that
+                    todo!();
                     current_action.action = None;
                 }
             }
@@ -531,19 +537,11 @@ fn update_task_completion_system(
     mut commands: Commands,
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
-        (
-            Entity,
-            &mut ActionQueue,
-            &mut CurrentTask,
-            &mut Inventory,
-            &mut CurrentAction,
-        ),
-        With<Unit>,
+        (Entity, &ActionQueue, &mut CurrentTask, &CurrentAction),
+        (With<Unit>, With<Inventory>),
     >,
 ) {
-    for (unit_ent, mut action_queue, mut current_task, mut inventory, mut current_action) in
-        unit_query.iter_mut()
-    {
+    for (unit_ent, action_queue, mut current_task, current_action) in unit_query.iter_mut() {
         // nothing to do
         let Some(task) = &mut current_task.task else {
             continue;
@@ -551,27 +549,16 @@ fn update_task_completion_system(
 
         match task.status {
             TaskStatus::Planned | TaskStatus::InProgress => {
-                // if no pending actions and no current executing action -> task finished
                 if action_queue.0.is_empty() && current_action.action.is_none() {
-                    // finalize
                     task.status = TaskStatus::Completed;
-
-                    // release any remaining reservations owned by this unit
                     reservations.release_all_for_owner(unit_ent);
-
-                    // clear the task so we can re-request it later
-                    current_task.task = None;
-                    current_task.initialized = false;
-
-                    // mark unit available
+                    current_task.reset();
                     commands.entity(unit_ent).insert(Available);
                 }
             }
             TaskStatus::Failed => {
-                // free reservations and clear task to allow retrial
                 reservations.release_all_for_owner(unit_ent);
-                current_task.task = None;
-                current_task.initialized = false;
+                current_task.reset();
                 commands.entity(unit_ent).insert(Available);
             }
             TaskStatus::Pending | TaskStatus::Completed => {
@@ -582,7 +569,7 @@ fn update_task_completion_system(
 }
 
 fn find_best_chest(
-    unit_tile_pos: Vec2,
+    unit_tile_pos: IVec2,
     desired_quantity: u32,
     desired_item_kind: ItemKind,
     chest_query: &Query<
@@ -590,16 +577,15 @@ fn find_best_chest(
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     reservations: &Reservations,
-) -> Option<(Entity, Vec2, u32)> {
-    let mut best_with_enough: Option<(Entity, Vec2, u32, f32)> = None; // (entity, tile, qty, distance)
-    let mut best_any: Option<(Entity, Vec2, u32, f32)> = None; // nearest with at least 1
+) -> Option<(Entity, IVec2, u32)> {
+    let mut best_with_enough: Option<(Entity, IVec2, u32, f32)> = None; // (entity, tile, qty, distance)
+    let mut best_any: Option<(Entity, IVec2, u32, f32)> = None; // nearest with at least 1
 
     for (chest_ent, chest_global_transform, chest_inv) in chest_query.iter() {
-        let chest_tile = world_pos_to_tile(chest_global_transform.translation().xy());
-        let dist = unit_tile_pos.distance(chest_tile);
+        let chest_tile = world_pos_to_rounded_tile(chest_global_transform.translation().xy());
+        let dist = tile_distance(unit_tile_pos, chest_tile);
         let real_quantity = chest_inv.count(&desired_item_kind);
         let already_reserved = reservations.total_reserved(chest_ent, desired_item_kind);
-
         let available = real_quantity.saturating_sub(already_reserved);
 
         if available == 0 {
@@ -636,13 +622,10 @@ fn find_best_chest(
 
 /// Test helper: assign a GetItems task when pressing E (safe: only assign when no current task or previous task completed/failed)
 fn test_find_2_rocks_system(
-    mut unit_query: Query<
-        (&Transform, &mut ActionQueue, &mut CurrentTask),
-        (With<Unit>, With<PathfindingAgent>),
-    >,
+    mut unit_query: Query<&mut CurrentTask, (With<Unit>, With<PathfindingAgent>)>,
 ) {
     let mut counter = 0;
-    for (_unit_transform, _unit_action_queue, mut unit_current_task) in unit_query.iter_mut() {
+    for mut unit_current_task in unit_query.iter_mut() {
         if counter > 0 {
             return;
         }
@@ -668,13 +651,10 @@ fn test_find_2_rocks_system(
 
 /// Test helper: assign a DeliverItems task that goes to the requester chest and drops 2 rocks
 fn test_deliver_2_rocks_system(
-    mut unit_query: Query<
-        (&Transform, &mut ActionQueue, &mut CurrentTask),
-        (With<Unit>, With<PathfindingAgent>),
-    >,
+    mut unit_query: Query<&mut CurrentTask, (With<Unit>, With<PathfindingAgent>)>,
 ) {
     let mut counter = 0;
-    for (_unit_transform, _unit_action_queue, mut unit_current_task) in unit_query.iter_mut() {
+    for mut unit_current_task in unit_query.iter_mut() {
         if counter > 0 {
             return;
         }
@@ -707,23 +687,5 @@ pub fn display_reservations_system(
         if let Some(action) = &current_action.action {
             println!("current_action: {:?}", action);
         }
-    }
-}
-
-impl Plugin for TasksPlugin {
-    fn build(&self, app: &mut bevy::app::App) {
-        app.insert_resource(Reservations::default()).add_systems(
-            FixedUpdate,
-            (
-                actions_decompose_planner_system.before(process_current_action_system),
-                process_current_action_system.before(move_and_collide_units_system),
-                update_task_completion_system.after(process_current_action_system),
-                assign_next_action_or_set_available_system,
-                // tests:
-                test_find_2_rocks_system.run_if(input_pressed(KeyCode::KeyE)),
-                // you can bind another key for deliver test, e.g. R
-                test_deliver_2_rocks_system.run_if(input_pressed(KeyCode::KeyR)),
-            ),
-        );
     }
 }

@@ -16,6 +16,32 @@ pub const STRUCTURE_LAYER_LEVEL: f32 = 0.0;
 
 pub struct MapPlugin;
 
+impl Plugin for MapPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_plugins(TilemapPlugin)
+            .insert_resource(ChunkManager::default())
+            .insert_resource(StructureManager::default())
+            .add_systems(
+                FixedUpdate,
+                (
+                    spawn_chunks_around_camera_system,
+                    spawn_chunks_around_units_system,
+                ),
+            );
+    }
+}
+
+#[derive(Resource, Default, Debug)]
+pub struct ChunkManager {
+    pub spawned_chunks: HashMap<IVec2, Entity>, // rounded_chunk_pos -> chunk
+}
+
+/// to quickly find the Structure at coordinates without checking every Structure
+#[derive(Resource, Default, Debug)]
+pub struct StructureManager {
+    pub structures: HashMap<IVec2, Entity>, // rounded_tile_pos -> structure
+}
+
 #[derive(Component)]
 pub struct Structure;
 
@@ -181,7 +207,6 @@ pub fn place_structure(
 
     // Maintenant le chunk existe forcément
     if let Some(&tilemap_entity) = chunk_manager.spawned_chunks.get(&rounded_chunk_pos) {
-        println!("a");
         let tilemap_world_pos =
             rounded_tile_pos_to_world(rounded_chunk_pos_to_rounded_tile(&rounded_chunk_pos));
 
@@ -353,31 +378,5 @@ fn spawn_chunks_around_units_system(
                 }
             }
         }
-    }
-}
-
-#[derive(Resource, Default, Debug)]
-pub struct ChunkManager {
-    pub spawned_chunks: HashMap<IVec2, Entity>, // rounded_chunk_pos -> chunk
-}
-
-/// to quickly find the Structure at coordinates without checking every Structure
-#[derive(Resource, Default, Debug)]
-pub struct StructureManager {
-    pub structures: HashMap<IVec2, Entity>, // rounded_tile_pos -> structure
-}
-
-impl Plugin for MapPlugin {
-    fn build(&self, app: &mut bevy::app::App) {
-        app.add_plugins(TilemapPlugin)
-            .insert_resource(ChunkManager::default())
-            .insert_resource(StructureManager::default())
-            .add_systems(
-                FixedUpdate,
-                (
-                    spawn_chunks_around_camera_system,
-                    spawn_chunks_around_units_system,
-                ),
-            );
     }
 }

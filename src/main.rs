@@ -4,10 +4,13 @@ use crate::{
         Chest, ChunkManager, MapPlugin, Provider, Requester, Structure, StructureManager,
         TILE_SIZE, place_structure, rounded_tile_pos_to_world,
     },
-    // pathfinding::PathfindingPlugin,
+    pathfinding::PathfindingPlugin,
     units::{
         TileMovement, Unit, UnitUnitCollisions, display_units_inventory_system,
-        move_and_collide_units_system, test_units_control_system,
+        display_units_with_no_current_action_system, move_and_collide_units_system,
+        states::Available,
+        tasks::{TasksPlugin, display_reservations_system},
+        test_units_control_system,
     },
 };
 use bevy::{
@@ -19,12 +22,12 @@ use bevy::{
     prelude::*,
     time::common_conditions::on_timer,
 };
-use rand::rng;
+use rand::{Rng, rng};
 use std::time::Duration;
 
 mod items;
 mod map;
-// mod pathfinding;
+mod pathfinding;
 mod units;
 
 pub const UPS_TARGET: f64 = 30.0;
@@ -32,8 +35,50 @@ const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
 const CAMERA_SPEED: f32 = 37.5;
 
+fn main() {
+    App::new()
+        .add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: "Overlord".to_string(),
+                present_mode: bevy::window::PresentMode::AutoVsync,
+                ..default()
+            }),
+            ..default()
+        }))
+        .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(MapPlugin)
+        .add_plugins(PathfindingPlugin)
+        .add_plugins(TasksPlugin)
+        .insert_resource(TimeState::default())
+        .insert_resource(UpsCounter {
+            ticks: 0,
+            last_second: 0.0,
+            ups: 0,
+        })
+        .insert_resource(Time::<Fixed>::from_hz(UPS_TARGET))
+        .add_systems(Startup, setup)
+        .add_systems(
+            Update,
+            (handle_camera_inputs, display_fps_ups, control_time_system),
+        )
+        .add_systems(
+            FixedUpdate,
+            (
+                update_logic,
+                move_and_collide_units_system,
+                display_inventories.run_if(input_pressed(KeyCode::KeyI)),
+                display_units_with_no_current_action_system
+                    .run_if(on_timer(Duration::from_secs(5))),
+                display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
+                display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
+                test_units_control_system,
+            ),
+        )
+        .run();
+}
+
 #[derive(Resource)]
-struct UpsCounter {
+pub struct UpsCounter {
     ticks: u32,
     last_second: f64,
     ups: u32,
@@ -77,10 +122,9 @@ fn setup(
 
     let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
-    for _i in 0..1 {
-        // let random_speed = rng.random_range(1.0..2.0);
-        // let random_speed = 2.0;
-        let random_speed = UPS_TARGET as u32;
+    for _i in 0..100 {
+        let random_multiplier = rng.random_range(1..=50);
+        let random_speed = UPS_TARGET as u32 / random_multiplier;
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // uses Unit required componenents to make it easier
@@ -91,7 +135,7 @@ fn setup(
             Sprite::from_image(player_texture_handle.clone()),
             Transform::from_translation(world_pos.extend(0.0)),
             TileMovement::new(random_speed),
-            // Available,
+            Available,
             UnitUnitCollisions,
         ));
     }
@@ -300,66 +344,25 @@ fn control_time_system(
         return;
     }
 
-    // A pour Accélérer (x2)
-    if input.just_pressed(KeyCode::KeyA) {
+    // Accélérer (x2)
+    if input.just_pressed(KeyCode::KeyY) {
         let current_hz = fixed_time.timestep().as_secs_f64().recip();
         let new_hz = current_hz * 2.0;
         println!("Temps de la simulation accéléré à {} Hz.", new_hz);
         fixed_time.set_timestep_hz(new_hz);
     }
 
-    // R pour Ralentir (/2)
-    if input.just_pressed(KeyCode::KeyR) {
+    // Ralentir (/2)
+    if input.just_pressed(KeyCode::KeyU) {
         let current_hz = fixed_time.timestep().as_secs_f64().recip();
         let new_hz = current_hz / 2.0;
         println!("Temps de la simulation ralenti à {} Hz.", new_hz);
         fixed_time.set_timestep_hz(new_hz);
     }
 
-    // N pour Normal (retour à la vitesse initiale)
-    if input.just_pressed(KeyCode::KeyN) {
+    // Normal (retour à la vitesse initiale)
+    if input.just_pressed(KeyCode::KeyI) {
         println!("Temps de la simulation réinitialisé à {} Hz.", UPS_TARGET);
         fixed_time.set_timestep_hz(UPS_TARGET);
     }
-}
-
-fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Overlord".to_string(),
-                present_mode: bevy::window::PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }))
-        .add_plugins(FrameTimeDiagnosticsPlugin::default())
-        .add_plugins(MapPlugin)
-        // .add_plugins(PathfindingPlugin)
-        // .add_plugins(TasksPlugin)
-        .insert_resource(TimeState::default())
-        .insert_resource(UpsCounter {
-            ticks: 0,
-            last_second: 0.0,
-            ups: 0,
-        })
-        .insert_resource(Time::<Fixed>::from_hz(UPS_TARGET))
-        .add_systems(Startup, setup)
-        .add_systems(
-            Update,
-            (handle_camera_inputs, display_fps_ups, control_time_system),
-        )
-        .add_systems(
-            FixedUpdate,
-            (
-                update_logic,
-                move_and_collide_units_system,
-                display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                // display_units_with_no_current_action.run_if(on_timer(Duration::from_secs(1))),
-                display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
-                // display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
-                test_units_control_system,
-            ),
-        )
-        .run();
 }
