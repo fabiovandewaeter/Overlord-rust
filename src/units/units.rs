@@ -11,6 +11,7 @@ use crate::{
     units::tasks::{ActionQueue, CurrentAction, CurrentTask},
 };
 use bevy::prelude::*;
+use rand::{Rng, rng};
 
 pub const UNIT_REACH: u8 = 1;
 pub const UNIT_DEFAULT_MOVEMENT_SPEED: u32 = UPS_TARGET as u32; // ticks per tile ; smaller is faster (here its 1 tile per second at normal tickrate by default)
@@ -78,7 +79,7 @@ impl Direction {
 #[derive(Component)]
 pub struct TileMovement {
     pub direction: Direction,
-    pub ticks_per_tile: u32, // movement speed ; smaller is faster
+    ticks_per_tile: u32, // movement speed ; smaller is faster
     pub tick_counter: u32,
 }
 
@@ -182,30 +183,53 @@ pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
     }
 }
 
-pub fn test_units_control_system(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut unit_query: Query<&mut TileMovement, With<Unit>>,
-) {
+// pub fn test_units_control_system(
+//     keyboard_input: Res<ButtonInput<KeyCode>>,
+//     mut unit_query: Query<&mut TileMovement, With<Unit>>,
+// ) {
+//     for mut tile_movement in unit_query.iter_mut() {
+//         let mut delta = IVec2::new(0, 0);
+//         if keyboard_input.pressed(KeyCode::ArrowLeft) {
+//             delta.x -= 1;
+//         }
+//         if keyboard_input.pressed(KeyCode::ArrowRight) {
+//             delta.x += 1;
+//         }
+//         if keyboard_input.pressed(KeyCode::ArrowUp) {
+//             delta.y += 1;
+//         }
+//         if keyboard_input.pressed(KeyCode::ArrowDown) {
+//             delta.y -= 1;
+//         }
+
+//         let new_direction = Direction::from(delta);
+//         if tile_movement.direction == new_direction {
+//             continue;
+//         }
+
+//         tile_movement.direction = new_direction;
+//     }
+// }
+
+pub fn test_units_control_system(mut unit_query: Query<&mut TileMovement, With<Unit>>) {
+    let mut rng = rand::rng();
     for mut tile_movement in unit_query.iter_mut() {
-        let mut delta = IVec2::new(0, 0);
-        if keyboard_input.pressed(KeyCode::ArrowLeft) {
-            delta.x -= 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowRight) {
-            delta.x += 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowUp) {
-            delta.y += 1;
-        }
-        if keyboard_input.pressed(KeyCode::ArrowDown) {
-            delta.y -= 1;
-        }
+        let random = rng.random_range(1..=8);
 
-        let new_direction = Direction::from(delta);
-        if tile_movement.direction == new_direction {
-            continue;
-        }
+        let new_direction = match random {
+            1 => Direction::NorthWest,
+            2 => Direction::North,
+            3 => Direction::NorthEast,
+            4 => Direction::East,
+            5 => Direction::SouthEast,
+            6 => Direction::South,
+            7 => Direction::SouthWest,
+            8 => Direction::West,
+            _ => Direction::Null,
+        };
 
-        tile_movement.direction = new_direction;
+        if tile_movement.direction != new_direction {
+            tile_movement.direction = new_direction;
+        }
     }
 }

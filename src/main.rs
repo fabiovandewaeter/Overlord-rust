@@ -57,22 +57,26 @@ fn main() {
             ups: 0,
         })
         .insert_resource(Time::<Fixed>::from_hz(UPS_TARGET))
-        .add_systems(Startup, setup)
+        .add_systems(Startup, setup_system)
         .add_systems(
             Update,
-            (handle_camera_inputs, display_fps_ups, control_time_system),
+            (
+                handle_camera_inputs_system,
+                display_fps_ups_system,
+                control_time_system,
+            ),
         )
         .add_systems(
             FixedUpdate,
             (
-                update_logic,
+                update_logic_system,
+                test_units_control_system,
                 move_and_collide_units_system,
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
                 display_units_with_no_current_action_system
                     .run_if(on_timer(Duration::from_secs(5))),
                 display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
                 display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
-                test_units_control_system,
             ),
         )
         .run();
@@ -85,7 +89,7 @@ pub struct UpsCounter {
     ups: u32,
 }
 
-fn display_fps_ups(
+fn display_fps_ups_system(
     time: Res<Time>,
     diagnostics: Res<DiagnosticsStore>,
     mut counter: ResMut<UpsCounter>,
@@ -106,11 +110,11 @@ fn display_fps_ups(
     }
 }
 
-pub fn update_logic(mut counter: ResMut<UpsCounter>) {
+pub fn update_logic_system(mut counter: ResMut<UpsCounter>) {
     counter.ticks += 1;
 }
 
-fn setup(
+fn setup_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -263,7 +267,7 @@ fn setup(
     );
 }
 
-fn handle_camera_inputs(
+fn handle_camera_inputs_system(
     mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera>>,
     input: Res<ButtonInput<KeyCode>>,
     mut input_mouse_wheel: EventReader<MouseWheel>,

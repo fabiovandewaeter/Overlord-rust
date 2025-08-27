@@ -310,36 +310,45 @@ pub fn movement_system(
     mut agents_query: Query<(&mut PathfindingAgent, &mut TileMovement, &Transform)>,
 ) {
     for (mut agent, mut tile_movement, transform) in agents_query.iter_mut() {
-        if let Some(&next_waypoint) = agent.path.front() {
-            let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
-
-            if let Some(last_tile_pos) = agent.last_tile_pos
-                && last_tile_pos == current_tile_pos
-            {
-                agent.stuck_ticks_counter += 1;
-            }
-
-            if agent.stuck_ticks_counter > LIMIT_STUCK_STICKS {
-                agent.reset();
-                continue;
-            }
-
-            if current_tile_pos == next_waypoint {
-                agent.path.pop_front();
-                tile_movement.direction = Direction::Null;
-                if agent.path.is_empty() {
-                    agent.reset();
-                }
-                continue;
-            }
-
-            let delta = next_waypoint - current_tile_pos;
-            let step = IVec2::new(delta.x.signum(), delta.y.signum());
-            tile_movement.direction = Direction::from(step);
-            agent.last_tile_pos = Some(current_tile_pos);
-        } else {
-            tile_movement.direction = Direction::Null;
+        if agent.path.is_empty() {
+            continue;
         }
+
+        let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+
+        if let Some(last_tile_pos) = agent.last_tile_pos
+            && last_tile_pos == current_tile_pos
+        {
+            agent.stuck_ticks_counter += 1;
+        }
+        if agent.stuck_ticks_counter > LIMIT_STUCK_STICKS {
+            agent.reset();
+            continue;
+        }
+
+        // remove all leading waypoints that are equal to current pos
+        while let Some(&front) = agent.path.front() {
+            if front == current_tile_pos {
+                agent.path.pop_front();
+            } else {
+                break;
+            }
+        }
+        // if path got emptied, reset and clear direction
+        if agent.path.is_empty() {
+            tile_movement.direction = Direction::Null;
+            agent.reset();
+            continue;
+        }
+
+        let next_waypoint = *agent.path.front().unwrap();
+
+        agent.stuck_ticks_counter = 0;
+        agent.last_tile_pos = Some(current_tile_pos);
+
+        let delta = next_waypoint - current_tile_pos;
+        let step = IVec2::new(delta.x.signum(), delta.y.signum());
+        tile_movement.direction = Direction::from(step);
     }
 }
 
