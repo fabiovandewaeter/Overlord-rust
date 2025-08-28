@@ -4,7 +4,11 @@ use crate::{
     pathfinding::PathfindingAgent,
     units::{UNIT_REACH, Unit, move_and_collide_units_system, states::Available},
 };
-use bevy::{input::common_conditions::input_pressed, prelude::*};
+use bevy::{
+    ecs::{entity, system::entity_command},
+    input::common_conditions::input_pressed,
+    prelude::*,
+};
 use std::{
     cmp::min,
     collections::{HashMap, VecDeque},
@@ -297,7 +301,10 @@ fn actions_decompose_planner_system(
                             // mark planned so we don't plan again until this task changes
                             task.status = TaskStatus::Planned;
                             current_task.initialized = true;
-                            commands.entity(unit_ent).remove::<Available>();
+                            match commands.get_entity(unit_ent) {
+                                Ok(mut entity_command) => entity_command.remove::<Available>(),
+                                Err(_) => todo!(),
+                            };
                         } else {
                             task.status = TaskStatus::Failed;
                             reservations.release_all_for_owner(unit_ent);
@@ -324,7 +331,10 @@ fn actions_decompose_planner_system(
 
                     task.status = TaskStatus::Planned;
                     current_task.initialized = true;
-                    commands.entity(unit_ent).remove::<Available>();
+                    match commands.get_entity(unit_ent) {
+                        Ok(mut entity_command) => entity_command.remove::<Available>(),
+                        Err(_) => todo!(),
+                    };
                 } else {
                     task.status = TaskStatus::Failed;
                 }
@@ -334,7 +344,10 @@ fn actions_decompose_planner_system(
                 if let TaskKind::Action(action) = task.kind {
                     action_queue.0.push_back(action);
                     task.status = TaskStatus::Planned;
-                    commands.entity(unit_ent).remove::<Available>();
+                    match commands.get_entity(unit_ent) {
+                        Ok(mut entity_command) => entity_command.remove::<Available>(),
+                        Err(_) => todo!(),
+                    };
                 }
             }
         }
@@ -373,7 +386,10 @@ pub fn assign_next_action_or_set_available_system(
                 current_action.action = Some(next_action);
                 current_action.initialized = false;
             } else {
-                commands.entity(entity).insert(Available);
+                match commands.get_entity(entity) {
+                    Ok(mut entity_command) => entity_command.insert(Available),
+                    Err(_) => todo!(),
+                };
             }
         }
     }
@@ -553,13 +569,19 @@ fn update_task_completion_system(
                     task.status = TaskStatus::Completed;
                     reservations.release_all_for_owner(unit_ent);
                     current_task.reset();
-                    commands.entity(unit_ent).insert(Available);
+                    match commands.get_entity(unit_ent) {
+                        Ok(mut entity_command) => entity_command.insert(Available),
+                        Err(_) => todo!(),
+                    };
                 }
             }
             TaskStatus::Failed => {
                 reservations.release_all_for_owner(unit_ent);
                 current_task.reset();
-                commands.entity(unit_ent).insert(Available);
+                match commands.get_entity(unit_ent) {
+                    Ok(mut entity_command) => entity_command.insert(Available),
+                    Err(_) => todo!(),
+                };
             }
             TaskStatus::Pending | TaskStatus::Completed => {
                 // nothing special

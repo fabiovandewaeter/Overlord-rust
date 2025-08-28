@@ -1,5 +1,5 @@
 use crate::units::Unit;
-use bevy::prelude::*;
+use bevy::{ecs::system::entity_command, prelude::*};
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 use std::collections::HashMap;
@@ -96,7 +96,11 @@ pub fn spawn_chunk(
                 structures_to_spawn.push(rounded_tile_pos);
             }
 
-            commands.entity(tilemap_entity).add_child(tile_entity);
+            match commands.get_entity(tilemap_entity) {
+                Ok(mut entity_command) => entity_command.add_child(tile_entity),
+                Err(_) => todo!(),
+            };
+
             tile_storage.set(&local_tile_pos, tile_entity);
         }
     }
@@ -116,19 +120,22 @@ pub fn spawn_chunk(
     ];
 
     // Configure le tilemap
-    commands.entity(tilemap_entity).insert(TilemapBundle {
-        grid_size: TILE_SIZE.into(),
-        size: CHUNK_SIZE.into(),
-        storage: tile_storage,
-        texture: TilemapTexture::Vector(image_handles),
-        tile_size: TILE_SIZE,
-        transform: tilemap_transform,
-        render_settings: TilemapRenderSettings {
-            render_chunk_size: RENDER_CHUNK_SIZE,
+    match commands.get_entity(tilemap_entity) {
+        Ok(mut entity_commands) => entity_commands.insert(TilemapBundle {
+            grid_size: TILE_SIZE.into(),
+            size: CHUNK_SIZE.into(),
+            storage: tile_storage,
+            texture: TilemapTexture::Vector(image_handles),
+            tile_size: TILE_SIZE,
+            transform: tilemap_transform,
+            render_settings: TilemapRenderSettings {
+                render_chunk_size: RENDER_CHUNK_SIZE,
+                ..Default::default()
+            },
             ..Default::default()
-        },
-        ..Default::default()
-    });
+        }),
+        Err(_) => todo!(),
+    };
 
     // Spawn les structures APRÈS avoir configuré le tilemap
     // et les attache directement au tilemap
@@ -174,10 +181,16 @@ fn spawn_structure_in_chunk(
         STRUCTURE_LAYER_LEVEL - TILE_LAYER_LEVEL, // Z relatif
     ));
 
-    commands.entity(*structure_entity).insert(transform);
+    match commands.get_entity(*structure_entity) {
+        Ok(mut entity_command) => entity_command.insert(transform),
+        Err(_) => todo!(),
+    };
 
     // Attache la structure au tilemap, pas à une tile individuelle
-    commands.entity(tilemap_entity).add_child(*structure_entity);
+    match commands.get_entity(tilemap_entity) {
+        Ok(mut entity_command) => entity_command.add_child(*structure_entity),
+        Err(_) => todo!(),
+    };
 
     // Enregistre la structure dans le manager
     structure_manager
