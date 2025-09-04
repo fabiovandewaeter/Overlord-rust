@@ -38,14 +38,18 @@ const CAMERA_SPEED: f32 = 37.5;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                title: "Overlord".to_string(),
-                present_mode: bevy::window::PresentMode::AutoVsync,
-                ..default()
-            }),
-            ..default()
-        }))
+        .add_plugins(
+            DefaultPlugins
+                .set(WindowPlugin {
+                    primary_window: Some(Window {
+                        title: "Overlord".to_string(),
+                        present_mode: bevy::window::PresentMode::AutoVsync,
+                        ..default()
+                    }),
+                    ..default()
+                })
+                .set(ImagePlugin::default_nearest()),
+        )
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
         .add_plugins(MapPlugin)
         .add_plugins(PathfindingPlugin)
@@ -130,17 +134,34 @@ fn setup_system(
 
     let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
+    let player_texture_handle2 = asset_server.load("default_16x16.png");
     for _i in 0..100 {
-        let random_multiplier = rng.random_range(1..=50);
+        // let random_multiplier = rng.random_range(1..=50);
+        let random_multiplier = rng.random_range(1..=5);
         let random_speed = UPS_TARGET as u32 / random_multiplier;
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
+        // let mut sprite = Sprite::from_image(player_texture_handle.clone());
+        let mut sprite = Sprite {
+            image: player_texture_handle.clone(),
+            custom_size: Some(Vec2::new(32.0, 32.0)),
+            ..default()
+        };
+        if random_multiplier > 2 {
+            // sprite = Sprite::from_image(player_texture_handle2.clone());
+            sprite = Sprite {
+                image: player_texture_handle2.clone(),
+                custom_size: Some(Vec2::new(32.0, 32.0)),
+                ..default()
+            };
+        }
         // uses Unit required componenents to make it easier
         commands.spawn((
             Unit {
                 name: "Unit".into(),
             },
-            Sprite::from_image(player_texture_handle.clone()),
+            // Sprite::from_image(player_texture_handle.clone()),
+            sprite,
             Transform::from_translation(world_pos.extend(0.0)),
             TileMovement::new(random_speed),
             Available,
