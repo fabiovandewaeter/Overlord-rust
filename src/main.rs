@@ -6,11 +6,11 @@ use crate::{
     },
     pathfinding::PathfindingPlugin,
     units::{
-        TileMovement, Unit, UnitUnitCollisions, display_units_inventory_system,
+        TileMovement, Unit, UnitUnitCollisions, UnitsPlugin, display_units_inventory_system,
         display_units_with_no_current_action_system, move_and_collide_units_system,
         states::Available,
         tasks::{TasksPlugin, display_reservations_system},
-        test_units_control_system,
+        test_units_control_system, update_sprite_facing_system,
     },
 };
 use bevy::{
@@ -51,6 +51,7 @@ fn main() {
                 .set(ImagePlugin::default_nearest()),
         )
         .add_plugins(FrameTimeDiagnosticsPlugin::default())
+        .add_plugins(UnitsPlugin)
         .add_plugins(MapPlugin)
         .add_plugins(PathfindingPlugin)
         .add_plugins(TasksPlugin)
@@ -74,12 +75,13 @@ fn main() {
             FixedUpdate,
             (
                 update_logic_system,
-                test_units_control_system,
-                move_and_collide_units_system,
+                // test_units_control_system.before(move_and_collide_units_system),
+                // move_and_collide_units_system,
+                // update_sprite_facing_system.after(move_and_collide_units_system),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                display_units_with_no_current_action_system
-                    .run_if(on_timer(Duration::from_secs(5))),
-                display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
+                // display_units_with_no_current_action_system
+                //     .run_if(on_timer(Duration::from_secs(5))),
+                // display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
                 display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
             ),
         )

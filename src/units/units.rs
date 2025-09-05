@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, time::Duration};
 
 use crate::{
     UPS_TARGET, UpsCounter,
@@ -10,11 +10,29 @@ use crate::{
     pathfinding::PathfindingAgent,
     units::tasks::{ActionQueue, CurrentAction, CurrentTask},
 };
-use bevy::prelude::*;
+use bevy::{prelude::*, time::common_conditions::on_timer};
 use rand::{Rng, rng};
 
 pub const UNIT_REACH: u8 = 1;
 pub const UNIT_DEFAULT_MOVEMENT_SPEED: u32 = UPS_TARGET as u32; // ticks per tile ; smaller is faster (here its 1 tile per second at normal tickrate by default)
+
+pub struct UnitsPlugin;
+
+impl Plugin for UnitsPlugin {
+    fn build(&self, app: &mut bevy::app::App) {
+        app.add_systems(
+            FixedUpdate,
+            (
+                test_units_control_system.before(move_and_collide_units_system),
+                move_and_collide_units_system,
+                update_sprite_facing_system.after(move_and_collide_units_system),
+                display_units_with_no_current_action_system
+                    .run_if(on_timer(Duration::from_secs(5))),
+                display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
+            ),
+        );
+    }
+}
 
 #[derive(Component, Debug, Default)]
 #[require(
@@ -164,6 +182,29 @@ pub fn move_and_collide_units_system(
             transform.translation.y = target_world_pos.y;
 
             tile_movement.direction = Direction::Null;
+        }
+    }
+}
+
+pub fn update_sprite_facing_system(mut query: Query<(&TileMovement, &mut Transform)>) {
+    for (movement, mut transform) in query.iter_mut() {
+        if movement.direction != Direction::Null {
+            // Détermine la direction horizontale
+            let is_moving_left = matches!(
+                movement.direction,
+                Direction::West | Direction::NorthWest | Direction::SouthWest
+            );
+
+            let is_moving_right = matches!(
+                movement.direction,
+                Direction::East | Direction::NorthEast | Direction::SouthEast
+            );
+
+            if is_moving_left {
+                transform.scale.x = -transform.scale.x.abs();
+            } else if is_moving_right {
+                transform.scale.x = transform.scale.x.abs();
+            }
         }
     }
 }
