@@ -126,7 +126,10 @@ fn setup_system(
     mut structure_manager: ResMut<StructureManager>,
     mut chunk_manager: ResMut<ChunkManager>,
 ) {
-    commands.spawn((Camera2d, Camera { ..default() }));
+    let mut orthographic_projection = OrthographicProjection::default_2d();
+    orthographic_projection.scale *= 0.8;
+    let projection = Projection::Orthographic(orthographic_projection);
+    commands.spawn((Camera2d, Camera { ..default() }, projection));
     commands.spawn((
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
@@ -134,7 +137,6 @@ fn setup_system(
 
     let mut rng = rng();
     let player_texture_handle = asset_server.load("default.png");
-    let player_texture_handle2 = asset_server.load("default_16x16.png");
     for _i in 0..100 {
         // let random_multiplier = rng.random_range(1..=50);
         let random_multiplier = rng.random_range(1..=5);
@@ -142,19 +144,11 @@ fn setup_system(
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
         // let mut sprite = Sprite::from_image(player_texture_handle.clone());
-        let mut sprite = Sprite {
+        let sprite = Sprite {
             image: player_texture_handle.clone(),
-            custom_size: Some(Vec2::new(32.0, 32.0)),
+            // custom_size: Some(Vec2::new(32.0, 32.0)),
             ..default()
         };
-        if random_multiplier > 2 {
-            // sprite = Sprite::from_image(player_texture_handle2.clone());
-            sprite = Sprite {
-                image: player_texture_handle2.clone(),
-                custom_size: Some(Vec2::new(32.0, 32.0)),
-                ..default()
-            };
-        }
         // uses Unit required componenents to make it easier
         commands.spawn((
             Unit {

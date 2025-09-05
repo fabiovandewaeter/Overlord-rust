@@ -31,6 +31,9 @@ pub struct Unit {
     pub name: String,
 }
 
+#[derive(Component)]
+struct Player;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Null,

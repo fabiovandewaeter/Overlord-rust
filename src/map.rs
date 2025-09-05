@@ -4,7 +4,7 @@ use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 use std::collections::HashMap;
 
-pub const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 32.0, y: 32.0 };
+pub const TILE_SIZE: TilemapTileSize = TilemapTileSize { x: 16.0, y: 16.0 };
 pub const CHUNK_SIZE: UVec2 = UVec2 { x: 32, y: 32 };
 // Render chunk sizes are set to 4 render chunks per user specified chunk.
 pub const RENDER_CHUNK_SIZE: UVec2 = UVec2 {
