@@ -243,10 +243,11 @@ fn actions_decompose_planner_system(
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     requester_chest_query: Query<
-        (Entity, &GlobalTransform, &Inventory),
+        (Entity, &GlobalTransform),
         (
             With<Chest>,
             With<Requester>,
+            With<Inventory>,
             Without<Provider>,
             Without<Unit>,
         ),
@@ -318,10 +319,24 @@ fn actions_decompose_planner_system(
             }
 
             TaskKind::DeliverItems { kind, quantity } => {
-                if let Ok((requester_ent, requester_global_tf, _req_inv)) =
-                    requester_chest_query.single()
-                {
-                    let req_pos = world_pos_to_rounded_tile(requester_global_tf.translation().xy());
+                // position de l'unité
+                let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+
+                // cherche le requester chest le plus proche (si il y en a plusieurs)
+                let mut best: Option<(Entity, IVec2, f32)> = None; // (entity, tile_pos, dist)
+                for (req_ent, req_global_tf) in requester_chest_query.iter() {
+                    let req_pos = world_pos_to_rounded_tile(req_global_tf.translation().xy());
+                    let dist = tile_distance(unit_tile_pos, req_pos);
+                    match &best {
+                        None => best = Some((req_ent, req_pos, dist)),
+                        Some((_, _, best_dist)) if dist < *best_dist => {
+                            best = Some((req_ent, req_pos, dist))
+                        }
+                        _ => {}
+                    }
+                }
+
+                if let Some((requester_ent, req_pos, _dist)) = best {
                     action_queue.0.push_back(Action::MoveTo(req_pos));
                     action_queue.0.push_back(Action::Drop {
                         kind,

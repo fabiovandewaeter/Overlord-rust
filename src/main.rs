@@ -66,7 +66,7 @@ fn main() {
         .add_systems(
             Update,
             (
-                handle_camera_inputs_system,
+                // handle_camera_inputs_system,
                 display_fps_ups_system,
                 control_time_system,
             ),
@@ -75,13 +75,7 @@ fn main() {
             FixedUpdate,
             (
                 update_logic_system,
-                // test_units_control_system.before(move_and_collide_units_system),
-                // move_and_collide_units_system,
-                // update_sprite_facing_system.after(move_and_collide_units_system),
                 display_inventories.run_if(input_pressed(KeyCode::KeyI)),
-                // display_units_with_no_current_action_system
-                //     .run_if(on_timer(Duration::from_secs(5))),
-                // display_units_inventory_system.run_if(on_timer(Duration::from_secs(5))),
                 display_reservations_system.run_if(on_timer(Duration::from_secs(5))),
             ),
         )
@@ -141,7 +135,7 @@ fn setup_system(
     let player_texture_handle = asset_server.load("default.png");
     for _i in 0..100 {
         // let random_multiplier = rng.random_range(1..=50);
-        let random_multiplier = rng.random_range(1..=5);
+        let random_multiplier = rng.random_range(5..=10);
         let random_speed = UPS_TARGET as u32 / random_multiplier;
         let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
 
@@ -256,6 +250,28 @@ fn setup_system(
         ))
         .id();
     let rounded_tile_pos = IVec2::new(-10, 5);
+    place_structure(
+        &mut commands,
+        &asset_server,
+        &chest_entity,
+        &mut structure_manager,
+        &mut chunk_manager,
+        rounded_tile_pos,
+    );
+
+    // requester chest 2
+    let mut inventory = Inventory::new();
+    inventory.add(ItemKind::Rock, 1);
+    let chest_entity = commands
+        .spawn((
+            Structure,
+            Chest,
+            Sprite::from_image(asset_server.load("structures/chest.png")),
+            inventory,
+            Requester,
+        ))
+        .id();
+    let rounded_tile_pos = IVec2::new(-12, 5);
     place_structure(
         &mut commands,
         &asset_server,

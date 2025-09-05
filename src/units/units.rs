@@ -23,8 +23,9 @@ impl Plugin for UnitsPlugin {
         app.add_systems(
             FixedUpdate,
             (
-                test_units_control_system.before(move_and_collide_units_system),
+                // test_units_control_system.before(move_and_collide_units_system),
                 move_and_collide_units_system,
+                player_control_system,
                 update_sprite_facing_system.after(move_and_collide_units_system),
                 display_units_with_no_current_action_system
                     .run_if(on_timer(Duration::from_secs(5))),
@@ -254,6 +255,31 @@ pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
 //         tile_movement.direction = new_direction;
 //     }
 // }
+
+pub fn player_control_system(
+    mut unit_query: Query<&mut TileMovement, (With<Unit>, With<Player>)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    if let Ok(mut tile_movement) = unit_query.single_mut() {
+        let mut direction = Direction::Null;
+        if input.pressed(KeyCode::KeyW) {
+            direction = Direction::North;
+        }
+        if input.pressed(KeyCode::KeyS) {
+            direction = Direction::South;
+        }
+        if input.pressed(KeyCode::KeyA) {
+            direction = Direction::West;
+        }
+        if input.pressed(KeyCode::KeyD) {
+            direction = Direction::East;
+        }
+
+        if tile_movement.direction != direction {
+            tile_movement.direction = direction;
+        }
+    }
+}
 
 pub fn test_units_control_system(mut unit_query: Query<&mut TileMovement, With<Unit>>) {
     let mut rng = rand::rng();
