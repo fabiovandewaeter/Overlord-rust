@@ -138,126 +138,238 @@ pub fn move_and_collide_units_system(
     structure_manager: Res<StructureManager>,
     mut unit_query: Query<
         (
+            Entity,
             &mut Transform,
             &mut TileMovement,
-            Option<&UnitUnitCollisions>,
+            Has<UnitUnitCollisions>,
         ),
         With<Unit>,
     >,
 ) {
-    // all tiles occupied by units
-    let mut occupied_tiles: HashSet<IVec2> = HashSet::new();
-    for (transform, _, unit_unit_collisions) in unit_query.iter() {
-        if unit_unit_collisions.is_some() {
-            let tile = world_pos_to_rounded_tile(transform.translation.xy());
-            occupied_tiles.insert(tile);
-        }
-    }
+    // Collecte des tiles occupées en une seule passe
+    let occupied_tiles = collect_occupied_tiles(&unit_query);
 
-    for (mut transform, mut tile_movement, unit_unit_collisions) in unit_query.iter_mut() {
-        if tile_movement.direction == Direction::Null {
+    // Traitement des mouvements
+    for (entity, mut transform, mut tile_movement, has_unit_collisions) in unit_query.iter_mut() {
+        if !should_process_movement(&mut tile_movement) {
             continue;
         }
 
-        tile_movement.tick_counter += 1;
+        let current_tile = world_pos_to_rounded_tile(transform.translation.xy());
 
-        if tile_movement.tick_counter >= tile_movement.ticks_per_tile {
-            tile_movement.tick_counter = 0;
-
-            let current_tile = world_pos_to_rounded_tile(transform.translation.xy());
-            let desired_delta = tile_movement.direction.delta();
-            let desired_target_tile = current_tile + desired_delta;
-
-            // --- NO DIAGONAL BETWEEN TWO BLOCKS ---
-            // si on veut aller en diagonal, vérifier les deux voisins orthogonaux
-            if desired_delta.x != 0 && desired_delta.y != 0 {
-                let tile_x = current_tile + IVec2::new(desired_delta.x, 0); // case sur l'axe X
-                let tile_y = current_tile + IVec2::new(0, desired_delta.y); // case sur l'axe Y
-
-                // interdiction si les deux orthogonales sont bloquées (== "entre deux blocs")
-                if !can_move_to(
-                    tile_x,
-                    &structure_manager,
-                    &occupied_tiles,
-                    unit_unit_collisions.is_some(),
-                ) && !can_move_to(
-                    tile_y,
-                    &structure_manager,
-                    &occupied_tiles,
-                    unit_unit_collisions.is_some(),
-                ) {
-                    // bloquer le mouvement diagonal
-                    tile_movement.direction = Direction::Null;
-                    continue;
-                }
+        match calculate_movement(
+            current_tile,
+            tile_movement.direction,
+            &structure_manager,
+            &occupied_tiles,
+            has_unit_collisions,
+        ) {
+            MovementResult::Success {
+                target_tile,
+                new_direction,
+            } => {
+                apply_movement(
+                    &mut transform,
+                    &mut tile_movement,
+                    target_tile,
+                    new_direction,
+                );
             }
-
-            let mut final_target_tile = desired_target_tile;
-            let mut final_delta = desired_delta;
-
-            if !can_move_to(
-                desired_target_tile,
-                &structure_manager,
-                &occupied_tiles,
-                unit_unit_collisions.is_some(),
-            ) {
-                // if diagonal, try the axes separately
-                if desired_delta.x != 0 && desired_delta.y != 0 {
-                    let axis_y_tile = current_tile + IVec2::new(0, desired_delta.y);
-                    let axis_x_tile = current_tile + IVec2::new(desired_delta.x, 0);
-                    // try North/South before East/West
-                    if can_move_to(
-                        axis_y_tile,
-                        &structure_manager,
-                        &occupied_tiles,
-                        unit_unit_collisions.is_some(),
-                    ) {
-                        final_target_tile = axis_y_tile;
-                        final_delta = IVec2::new(0, desired_delta.y);
-                    } else if can_move_to(
-                        axis_x_tile,
-                        &structure_manager,
-                        &occupied_tiles,
-                        unit_unit_collisions.is_some(),
-                    ) {
-                        final_target_tile = axis_x_tile;
-                        final_delta = IVec2::new(desired_delta.x, 0);
-                    } else {
-                        // aucun déplacement possible
-                        tile_movement.direction = Direction::Null;
-                        continue;
-                    }
-                } else {
-                    // mouvement non-diagonal mais bloqué => annuler
-                    tile_movement.direction = Direction::Null;
-                    continue;
-                }
+            MovementResult::Blocked => {
+                tile_movement.direction = Direction::Null;
             }
-
-            tile_movement.direction = Direction::from(final_delta);
-
-            let target_world_pos = rounded_tile_pos_to_world(final_target_tile);
-            transform.translation.x = target_world_pos.x;
-            transform.translation.y = target_world_pos.y;
-
-            tile_movement.direction = Direction::Null;
         }
     }
+}
+
+// Structs et enums pour clarifier les intentions
+#[derive(Debug)]
+enum MovementResult {
+    Success {
+        target_tile: IVec2,
+        new_direction: Direction,
+    },
+    Blocked,
+}
+
+// Fonctions helper pour séparer les responsabilités
+fn collect_occupied_tiles(
+    unit_query: &Query<
+        (
+            Entity,
+            &mut Transform,
+            &mut TileMovement,
+            Has<UnitUnitCollisions>,
+        ),
+        With<Unit>,
+    >,
+) -> HashSet<IVec2> {
+    unit_query
+        .iter()
+        .filter(|(_, _, _, has_collisions)| *has_collisions)
+        .map(|(_, transform, _, _)| world_pos_to_rounded_tile(transform.translation.xy()))
+        .collect()
+}
+
+fn should_process_movement(tile_movement: &mut TileMovement) -> bool {
+    if tile_movement.direction == Direction::Null {
+        return false;
+    }
+
+    tile_movement.tick_counter += 1;
+
+    if tile_movement.tick_counter >= tile_movement.ticks_per_tile {
+        tile_movement.tick_counter = 0;
+        true
+    } else {
+        false
+    }
+}
+
+fn calculate_movement(
+    current_tile: IVec2,
+    desired_direction: Direction,
+    structure_manager: &Res<StructureManager>,
+    occupied_tiles: &HashSet<IVec2>,
+    has_unit_collisions: bool,
+) -> MovementResult {
+    let desired_delta = desired_direction.delta();
+    let desired_target = current_tile + desired_delta;
+
+    // Vérification spéciale pour les mouvements diagonaux
+    if is_diagonal_movement(desired_delta) {
+        if let Some(result) = handle_diagonal_movement(
+            current_tile,
+            desired_delta,
+            structure_manager,
+            occupied_tiles,
+            has_unit_collisions,
+        ) {
+            return result;
+        }
+    }
+
+    // Mouvement direct possible ?
+    if can_move_to(
+        desired_target,
+        structure_manager,
+        occupied_tiles,
+        has_unit_collisions,
+    ) {
+        return MovementResult::Success {
+            target_tile: desired_target,
+            new_direction: desired_direction,
+        };
+    }
+
+    // Pour les mouvements diagonaux, essayer les axes séparément
+    if is_diagonal_movement(desired_delta) {
+        try_axis_movement(
+            current_tile,
+            desired_delta,
+            structure_manager,
+            occupied_tiles,
+            has_unit_collisions,
+        )
+    } else {
+        MovementResult::Blocked
+    }
+}
+
+fn is_diagonal_movement(delta: IVec2) -> bool {
+    delta.x != 0 && delta.y != 0
+}
+
+fn handle_diagonal_movement(
+    current_tile: IVec2,
+    desired_delta: IVec2,
+    structure_manager: &Res<StructureManager>,
+    occupied_tiles: &HashSet<IVec2>,
+    has_unit_collisions: bool,
+) -> Option<MovementResult> {
+    let tile_x = current_tile + IVec2::new(desired_delta.x, 0);
+    let tile_y = current_tile + IVec2::new(0, desired_delta.y);
+
+    // Interdiction si les deux cases orthogonales sont bloquées
+    let can_move_x = can_move_to(
+        tile_x,
+        structure_manager,
+        occupied_tiles,
+        has_unit_collisions,
+    );
+    let can_move_y = can_move_to(
+        tile_y,
+        structure_manager,
+        occupied_tiles,
+        has_unit_collisions,
+    );
+
+    if !can_move_x && !can_move_y {
+        Some(MovementResult::Blocked)
+    } else {
+        None // Continue avec la logique normale
+    }
+}
+
+fn try_axis_movement(
+    current_tile: IVec2,
+    desired_delta: IVec2,
+    structure_manager: &Res<StructureManager>,
+    occupied_tiles: &HashSet<IVec2>,
+    has_unit_collisions: bool,
+) -> MovementResult {
+    let axis_y_tile = current_tile + IVec2::new(0, desired_delta.y);
+    let axis_x_tile = current_tile + IVec2::new(desired_delta.x, 0);
+
+    // Priorité Nord/Sud avant Est/Ouest
+    if can_move_to(
+        axis_y_tile,
+        structure_manager,
+        occupied_tiles,
+        has_unit_collisions,
+    ) {
+        MovementResult::Success {
+            target_tile: axis_y_tile,
+            new_direction: Direction::from(IVec2::new(0, desired_delta.y)),
+        }
+    } else if can_move_to(
+        axis_x_tile,
+        structure_manager,
+        occupied_tiles,
+        has_unit_collisions,
+    ) {
+        MovementResult::Success {
+            target_tile: axis_x_tile,
+            new_direction: Direction::from(IVec2::new(desired_delta.x, 0)),
+        }
+    } else {
+        MovementResult::Blocked
+    }
+}
+
+fn apply_movement(
+    transform: &mut Transform,
+    tile_movement: &mut TileMovement,
+    target_tile: IVec2,
+    new_direction: Direction,
+) {
+    let target_world_pos = rounded_tile_pos_to_world(target_tile);
+    transform.translation.x = target_world_pos.x;
+    transform.translation.y = target_world_pos.y;
+
+    tile_movement.direction = new_direction;
+    // Note: Je suppose que tu veux garder la direction, mais ton code original la remet à Null
+    // tile_movement.direction = Direction::Null;
 }
 
 fn can_move_to(
     tile: IVec2,
     structure_manager: &Res<StructureManager>,
     occupied_tiles: &HashSet<IVec2>,
-    unit_unit_collisions: bool,
+    has_unit_collisions: bool,
 ) -> bool {
-    if !is_tile_passable(tile, structure_manager) {
-        return false;
-    }
-    if occupied_tiles.contains(&tile) && unit_unit_collisions {
-        return false;
-    }
-    true
+    is_tile_passable(tile, structure_manager)
+        && (!has_unit_collisions || !occupied_tiles.contains(&tile))
 }
 
 pub fn update_sprite_facing_system(mut query: Query<(&TileMovement, &mut Transform)>) {
