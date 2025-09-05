@@ -35,7 +35,7 @@ mod units;
 pub const UPS_TARGET: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
-const CAMERA_SPEED: f32 = 37.5;
+// const CAMERA_SPEED: f32 = 37.5;
 
 fn main() {
     App::new()
@@ -81,38 +81,6 @@ fn main() {
             ),
         )
         .run();
-}
-
-#[derive(Resource)]
-pub struct UpsCounter {
-    ticks: u32,
-    last_second: f64,
-    ups: u32,
-}
-
-fn display_fps_ups_system(
-    time: Res<Time>,
-    diagnostics: Res<DiagnosticsStore>,
-    mut counter: ResMut<UpsCounter>,
-) {
-    let now = time.elapsed_secs_f64();
-    if now - counter.last_second >= 1.0 {
-        // Calcule l’UPS
-        counter.ups = counter.ticks;
-        counter.ticks = 0;
-        counter.last_second = now;
-
-        // Récupère le FPS depuis le plugin
-        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
-            if let Some(fps_avg) = fps.smoothed() {
-                println!("FPS: {:.0} | UPS: {}", fps_avg, counter.ups);
-            }
-        }
-    }
-}
-
-pub fn update_logic_system(mut counter: ResMut<UpsCounter>) {
-    counter.ticks += 1;
 }
 
 fn setup_system(
@@ -301,6 +269,38 @@ fn setup_system(
     );
 }
 
+#[derive(Resource)]
+pub struct UpsCounter {
+    ticks: u32,
+    last_second: f64,
+    ups: u32,
+}
+
+fn display_fps_ups_system(
+    time: Res<Time>,
+    diagnostics: Res<DiagnosticsStore>,
+    mut counter: ResMut<UpsCounter>,
+) {
+    let now = time.elapsed_secs_f64();
+    if now - counter.last_second >= 1.0 {
+        // Calcule l’UPS
+        counter.ups = counter.ticks;
+        counter.ticks = 0;
+        counter.last_second = now;
+
+        // Récupère le FPS depuis le plugin
+        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
+            if let Some(fps_avg) = fps.smoothed() {
+                println!("FPS: {:.0} | UPS: {}", fps_avg, counter.ups);
+            }
+        }
+    }
+}
+
+pub fn update_logic_system(mut counter: ResMut<UpsCounter>) {
+    counter.ticks += 1;
+}
+
 fn handle_camera_inputs_system(
     mut camera_query: Query<(&mut Transform, &mut Projection), (With<Camera>, Without<Player>)>,
     // input: Res<ButtonInput<KeyCode>>,
@@ -313,7 +313,11 @@ fn handle_camera_inputs_system(
     };
 
     if let Ok(player_transform) = player_query.single() {
-        camera_transform.translation = player_transform.translation;
+        let Vec3 { x, y, .. } = player_transform.translation;
+        let direction = Vec3::new(x, y, camera_transform.translation.z);
+        camera_transform
+            .translation
+            .smooth_nudge(&direction, 2., time.delta_secs());
     }
 
     // // free Camera movement controls

@@ -14,8 +14,6 @@ use std::{
     collections::{HashMap, VecDeque},
 };
 
-// TODO: see how to remove that
-// const BONUS_RANGE: f32 = 0.8;
 const MAX_TASKS_RETRIES: u32 = 3;
 
 pub struct TasksPlugin;
