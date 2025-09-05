@@ -6,8 +6,9 @@ use crate::{
     },
     pathfinding::PathfindingPlugin,
     units::{
-        TileMovement, Unit, UnitUnitCollisions, UnitsPlugin, display_units_inventory_system,
-        display_units_with_no_current_action_system, move_and_collide_units_system,
+        Player, TileMovement, Unit, UnitUnitCollisions, UnitsPlugin,
+        display_units_inventory_system, display_units_with_no_current_action_system,
+        move_and_collide_units_system,
         states::Available,
         tasks::{TasksPlugin, display_reservations_system},
         test_units_control_system, update_sprite_facing_system,
@@ -66,7 +67,7 @@ fn main() {
         .add_systems(
             Update,
             (
-                // handle_camera_inputs_system,
+                handle_camera_inputs_system,
                 display_fps_ups_system,
                 control_time_system,
             ),
@@ -145,12 +146,10 @@ fn setup_system(
             // custom_size: Some(Vec2::new(32.0, 32.0)),
             ..default()
         };
-        // uses Unit required componenents to make it easier
         commands.spawn((
             Unit {
                 name: "Unit".into(),
             },
-            // Sprite::from_image(player_texture_handle.clone()),
             sprite,
             Transform::from_translation(world_pos.extend(0.0)),
             TileMovement::new(random_speed),
@@ -158,17 +157,19 @@ fn setup_system(
             UnitUnitCollisions,
         ));
     }
-    let random_speed = u32::MAX;
+    // let speed = u32::MAX;
+    let speed = UPS_TARGET as u32 / 5;
     let world_pos = rounded_tile_pos_to_world(IVec2::new(5, 0));
     // uses Unit required componenents to make it easier
     commands.spawn((
         Unit {
-            name: "AFK Player".into(),
+            name: "Player".into(),
         },
         Sprite::from_image(player_texture_handle.clone()),
         Transform::from_translation(world_pos.extend(0.0)),
-        TileMovement::new(random_speed),
+        TileMovement::new(speed),
         UnitUnitCollisions,
+        Player,
     ));
 
     // provider chest
@@ -301,46 +302,50 @@ fn setup_system(
 }
 
 fn handle_camera_inputs_system(
-    mut camera_query: Query<(&mut Transform, &mut Projection), With<Camera>>,
-    input: Res<ButtonInput<KeyCode>>,
+    mut camera_query: Query<(&mut Transform, &mut Projection), (With<Camera>, Without<Player>)>,
+    // input: Res<ButtonInput<KeyCode>>,
     mut input_mouse_wheel: EventReader<MouseWheel>,
+    player_query: Query<&Transform, With<Player>>,
     time: Res<Time>,
 ) {
-    let Ok((mut transform, mut projection)) = camera_query.single_mut() else {
+    let Ok((mut camera_transform, mut projection)) = camera_query.single_mut() else {
         return;
     };
 
-    // Camera movement controls
-    let mut direction = Vec3::ZERO;
-
-    if input.pressed(KeyCode::KeyW) {
-        direction.y += 1.0;
-    }
-    if input.pressed(KeyCode::KeyS) {
-        direction.y -= 1.0;
-    }
-    if input.pressed(KeyCode::KeyA) {
-        direction.x -= 1.0;
-    }
-    if input.pressed(KeyCode::KeyD) {
-        direction.x += 1.0;
+    if let Ok(player_transform) = player_query.single() {
+        camera_transform.translation = player_transform.translation;
     }
 
-    // Récupérer le niveau de zoom actuel
-    let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
-        projection2d.scale
-    } else {
-        1.0 // Valeur par défaut si ce n'est pas une projection orthographique
-    };
+    // // free Camera movement controls
+    // let mut direction = Vec3::ZERO;
+    // if input.pressed(KeyCode::KeyW) {
+    //     direction.y += 1.0;
+    // }
+    // if input.pressed(KeyCode::KeyS) {
+    //     direction.y -= 1.0;
+    // }
+    // if input.pressed(KeyCode::KeyA) {
+    //     direction.x -= 1.0;
+    // }
+    // if input.pressed(KeyCode::KeyD) {
+    //     direction.x += 1.0;
+    // }
+    //
+    // // Récupérer le niveau de zoom actuel
+    // let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
+    //     projection2d.scale
+    // } else {
+    //     1.0 // Valeur par défaut si ce n'est pas une projection orthographique
+    // };
+    //
+    // // normalizes to have constant diagonal speed
+    // if direction != Vec3::ZERO {
+    //     direction = direction.normalize();
+    //     let speed_in_pixels = CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
+    //     transform.translation += direction * speed_in_pixels;
+    // }
 
-    // normalizes to have constant diagonal speed
-    if direction != Vec3::ZERO {
-        direction = direction.normalize();
-        let speed_in_pixels = CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
-        transform.translation += direction * speed_in_pixels;
-    }
-
-    // Camera zoom controls
+    // zoom controls
     if let Projection::Orthographic(projection2d) = &mut *projection {
         for mouse_wheel_event in input_mouse_wheel.read() {
             use bevy::math::ops::powf;

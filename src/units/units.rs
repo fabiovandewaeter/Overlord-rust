@@ -51,7 +51,7 @@ pub struct Unit {
 }
 
 #[derive(Component)]
-struct Player;
+pub struct Player;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -130,7 +130,7 @@ impl TileMovement {
     }
 }
 
-/// to add if the entity needs to checks its collisions with other entities (collisions with walls isn't affected)
+/// add if the unit should checks its collisions with other units (collisions with walls are not affected by this component)
 #[derive(Component)]
 pub struct UnitUnitCollisions;
 
@@ -165,26 +165,99 @@ pub fn move_and_collide_units_system(
             tile_movement.tick_counter = 0;
 
             let current_tile = world_pos_to_rounded_tile(transform.translation.xy());
-            let desired_target_tile = current_tile + tile_movement.direction.delta();
-            // if there is a structure
-            if !is_tile_passable(desired_target_tile, &structure_manager) {
-                tile_movement.direction = Direction::Null;
-                continue;
+            let desired_delta = tile_movement.direction.delta();
+            let desired_target_tile = current_tile + desired_delta;
+
+            // --- NO DIAGONAL BETWEEN TWO BLOCKS ---
+            // si on veut aller en diagonal, vérifier les deux voisins orthogonaux
+            if desired_delta.x != 0 && desired_delta.y != 0 {
+                let tile_x = current_tile + IVec2::new(desired_delta.x, 0); // case sur l'axe X
+                let tile_y = current_tile + IVec2::new(0, desired_delta.y); // case sur l'axe Y
+
+                // interdiction si les deux orthogonales sont bloquées (== "entre deux blocs")
+                if !can_move_to(
+                    tile_x,
+                    &structure_manager,
+                    &occupied_tiles,
+                    unit_unit_collisions.is_some(),
+                ) && !can_move_to(
+                    tile_y,
+                    &structure_manager,
+                    &occupied_tiles,
+                    unit_unit_collisions.is_some(),
+                ) {
+                    // bloquer le mouvement diagonal
+                    tile_movement.direction = Direction::Null;
+                    continue;
+                }
             }
 
-            // if there is a unit with collisions and current unit has collisions too
-            if occupied_tiles.contains(&desired_target_tile) && unit_unit_collisions.is_some() {
-                tile_movement.direction = Direction::Null;
-                continue;
+            let mut final_target_tile = desired_target_tile;
+            let mut final_delta = desired_delta;
+
+            if !can_move_to(
+                desired_target_tile,
+                &structure_manager,
+                &occupied_tiles,
+                unit_unit_collisions.is_some(),
+            ) {
+                // if diagonal, try the axes separately
+                if desired_delta.x != 0 && desired_delta.y != 0 {
+                    let axis_y_tile = current_tile + IVec2::new(0, desired_delta.y);
+                    let axis_x_tile = current_tile + IVec2::new(desired_delta.x, 0);
+                    // try North/South before East/West
+                    if can_move_to(
+                        axis_y_tile,
+                        &structure_manager,
+                        &occupied_tiles,
+                        unit_unit_collisions.is_some(),
+                    ) {
+                        final_target_tile = axis_y_tile;
+                        final_delta = IVec2::new(0, desired_delta.y);
+                    } else if can_move_to(
+                        axis_x_tile,
+                        &structure_manager,
+                        &occupied_tiles,
+                        unit_unit_collisions.is_some(),
+                    ) {
+                        final_target_tile = axis_x_tile;
+                        final_delta = IVec2::new(desired_delta.x, 0);
+                    } else {
+                        // aucun déplacement possible
+                        tile_movement.direction = Direction::Null;
+                        continue;
+                    }
+                } else {
+                    // mouvement non-diagonal mais bloqué => annuler
+                    tile_movement.direction = Direction::Null;
+                    continue;
+                }
             }
 
-            let target_world_pos = rounded_tile_pos_to_world(desired_target_tile);
+            tile_movement.direction = Direction::from(final_delta);
+
+            let target_world_pos = rounded_tile_pos_to_world(final_target_tile);
             transform.translation.x = target_world_pos.x;
             transform.translation.y = target_world_pos.y;
 
             tile_movement.direction = Direction::Null;
         }
     }
+}
+
+fn can_move_to(
+    tile: IVec2,
+    structure_manager: &Res<StructureManager>,
+    occupied_tiles: &HashSet<IVec2>,
+    unit_unit_collisions: bool,
+) -> bool {
+    if !is_tile_passable(tile, structure_manager) {
+        return false;
+    }
+    if occupied_tiles.contains(&tile) && unit_unit_collisions {
+        return false;
+    }
+    true
 }
 
 pub fn update_sprite_facing_system(mut query: Query<(&TileMovement, &mut Transform)>) {
@@ -210,6 +283,32 @@ pub fn update_sprite_facing_system(mut query: Query<(&TileMovement, &mut Transfo
     }
 }
 
+pub fn player_control_system(
+    mut unit_query: Query<&mut TileMovement, (With<Unit>, With<Player>)>,
+    input: Res<ButtonInput<KeyCode>>,
+) {
+    if let Ok(mut tile_movement) = unit_query.single_mut() {
+        let mut delta = IVec2::new(0, 0);
+        if input.pressed(KeyCode::KeyW) {
+            delta.y += 1;
+        }
+        if input.pressed(KeyCode::KeyA) {
+            delta.x -= 1;
+        }
+        if input.pressed(KeyCode::KeyD) {
+            delta.x += 1;
+        }
+        if input.pressed(KeyCode::KeyS) {
+            delta.y -= 1;
+        }
+        let new_direction = Direction::from(delta);
+
+        if tile_movement.direction != new_direction {
+            tile_movement.direction = new_direction;
+        }
+    }
+}
+
 pub fn display_units_with_no_current_action_system(unit_query: Query<&CurrentAction, With<Unit>>) {
     let mut counter = 0;
     for current_action in unit_query.iter() {
@@ -228,60 +327,9 @@ pub fn display_units_inventory_system(unit_query: Query<&Inventory>) {
     }
 }
 
-// pub fn test_units_control_system(
-//     keyboard_input: Res<ButtonInput<KeyCode>>,
-//     mut unit_query: Query<&mut TileMovement, With<Unit>>,
-// ) {
-//     for mut tile_movement in unit_query.iter_mut() {
-//         let mut delta = IVec2::new(0, 0);
-//         if keyboard_input.pressed(KeyCode::ArrowLeft) {
-//             delta.x -= 1;
-//         }
-//         if keyboard_input.pressed(KeyCode::ArrowRight) {
-//             delta.x += 1;
-//         }
-//         if keyboard_input.pressed(KeyCode::ArrowUp) {
-//             delta.y += 1;
-//         }
-//         if keyboard_input.pressed(KeyCode::ArrowDown) {
-//             delta.y -= 1;
-//         }
-
-//         let new_direction = Direction::from(delta);
-//         if tile_movement.direction == new_direction {
-//             continue;
-//         }
-
-//         tile_movement.direction = new_direction;
-//     }
-// }
-
-pub fn player_control_system(
-    mut unit_query: Query<&mut TileMovement, (With<Unit>, With<Player>)>,
-    input: Res<ButtonInput<KeyCode>>,
+pub fn test_units_control_system(
+    mut unit_query: Query<&mut TileMovement, (With<Unit>, Without<Player>)>,
 ) {
-    if let Ok(mut tile_movement) = unit_query.single_mut() {
-        let mut direction = Direction::Null;
-        if input.pressed(KeyCode::KeyW) {
-            direction = Direction::North;
-        }
-        if input.pressed(KeyCode::KeyS) {
-            direction = Direction::South;
-        }
-        if input.pressed(KeyCode::KeyA) {
-            direction = Direction::West;
-        }
-        if input.pressed(KeyCode::KeyD) {
-            direction = Direction::East;
-        }
-
-        if tile_movement.direction != direction {
-            tile_movement.direction = direction;
-        }
-    }
-}
-
-pub fn test_units_control_system(mut unit_query: Query<&mut TileMovement, With<Unit>>) {
     let mut rng = rand::rng();
     for mut tile_movement in unit_query.iter_mut() {
         let random = rng.random_range(1..=8);
