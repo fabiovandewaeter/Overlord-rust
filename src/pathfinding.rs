@@ -1,7 +1,9 @@
 use crate::UPS_TARGET;
-use crate::map::{StructureManager, get_neighbors, is_tile_passable, world_pos_to_rounded_tile};
+use crate::map::{
+    GridPos, StructureManager, get_neighbors, is_tile_passable, world_pos_to_rounded_tile,
+};
+use crate::units::movements::{Direction, TileMovement};
 use crate::units::tasks::{ActionQueue, CurrentAction, reset_actions_system};
-use crate::units::{Direction, TileMovement};
 use bevy::input::common_conditions::input_just_pressed;
 use bevy::prelude::*;
 use std::cmp::Ordering;
@@ -30,10 +32,10 @@ impl Plugin for PathfindingPlugin {
 
 #[derive(Clone)]
 struct PathNode {
-    pos: IVec2,
+    pos: GridPos,
     g_cost: f32,
     h_cost: f32,
-    parent: Option<IVec2>,
+    parent: Option<GridPos>,
 }
 
 impl PathNode {
@@ -67,9 +69,9 @@ impl Eq for PathNode {}
 
 #[derive(Component, Debug)]
 pub struct PathfindingAgent {
-    pub target: Option<IVec2>,
-    pub path: VecDeque<IVec2>,
-    pub last_tile_pos: Option<IVec2>,
+    pub target: Option<GridPos>,
+    pub path: VecDeque<GridPos>,
+    pub last_tile_pos: Option<GridPos>,
     pub stuck_ticks_counter: u32,
 }
 
@@ -94,17 +96,20 @@ impl PathfindingAgent {
 }
 
 // ========== FONCTIONS UTILITAIRES ==========
-fn is_diagonal(from: IVec2, to: IVec2) -> bool {
+fn is_diagonal(from: GridPos, to: GridPos) -> bool {
     (from.x - to.x).abs() == 1 && (from.y - to.y).abs() == 1
 }
 
-fn heuristic(a: IVec2, b: IVec2) -> f32 {
+fn heuristic(a: GridPos, b: GridPos) -> f32 {
     let dx = (a.x - b.x) as f32;
     let dy = (a.y - b.y) as f32;
     (dx * dx + dy * dy).sqrt()
 }
 
-fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) -> VecDeque<IVec2> {
+fn reconstruct_path(
+    all_nodes: &HashMap<GridPos, PathNode>,
+    mut current: GridPos,
+) -> VecDeque<GridPos> {
     let mut path = VecDeque::new();
     while let Some(node) = all_nodes.get(&current) {
         path.push_front(node.pos);
@@ -118,10 +123,10 @@ fn reconstruct_path(all_nodes: &HashMap<IVec2, PathNode>, mut current: IVec2) ->
 }
 
 fn find_path(
-    start_grid: IVec2,
-    end_grid: IVec2,
+    start_grid: GridPos,
+    end_grid: GridPos,
     structure_manager: &Res<StructureManager>,
-) -> Option<VecDeque<IVec2>> {
+) -> Option<VecDeque<GridPos>> {
     // if target not reachable, find nearest passable tile
     let actual_end_grid = if !is_tile_passable(end_grid, structure_manager) {
         find_nearest_passable_tile(end_grid, start_grid, structure_manager).unwrap_or(start_grid)
@@ -146,7 +151,7 @@ fn find_path(
     // A* pathfinding
     // -------------------------
     let mut open_set = BinaryHeap::new();
-    let mut all_nodes: HashMap<IVec2, PathNode> = HashMap::new();
+    let mut all_nodes: HashMap<GridPos, PathNode> = HashMap::new();
 
     let start_node = PathNode {
         pos: start_grid,
@@ -182,11 +187,11 @@ fn find_path(
 
         for neighbor_pos in get_neighbors(current_node.pos) {
             if is_diagonal(current_node.pos, neighbor_pos) {
-                let corner_1 = IVec2 {
+                let corner_1 = GridPos {
                     x: current_node.pos.x,
                     y: neighbor_pos.y,
                 };
-                let corner_2 = IVec2 {
+                let corner_2 = GridPos {
                     x: neighbor_pos.x,
                     y: current_node.pos.y,
                 };
@@ -233,10 +238,10 @@ fn find_path(
 
 // trouve la case passable la plus proche en privilégiant la direction d'approche
 fn find_nearest_passable_tile(
-    target: IVec2,
-    start: IVec2,
+    target: GridPos,
+    start: GridPos,
     structure_manager: &Res<StructureManager>,
-) -> Option<IVec2> {
+) -> Option<GridPos> {
     // Calcule la direction d'approche depuis le point de départ
     let approach_dir = IVec2::new((target.x - start.x).signum(), (target.y - start.y).signum());
 
@@ -288,14 +293,14 @@ fn find_nearest_passable_tile(
 // ========== SYSTÈMES BEVY ==========
 /// Système qui calcule le chemin pour les agents.
 pub fn pathfinding_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &Transform)>,
+    mut agents_query: Query<(&mut PathfindingAgent, &GridPos)>,
     structure_manager: Res<StructureManager>,
 ) {
-    for (mut agent, transform) in agents_query.iter_mut() {
+    for (mut agent, grid_pos) in agents_query.iter_mut() {
         if let Some(target) = agent.target {
-            let start_tile = world_pos_to_rounded_tile(transform.translation.xy());
+            // let start_tile = world_pos_to_rounded_tile(transform.translation.xy());
             if agent.path.is_empty() {
-                if let Some(new_path) = find_path(start_tile, target, &structure_manager) {
+                if let Some(new_path) = find_path(*grid_pos, target, &structure_manager) {
                     agent.path = new_path;
                 } else {
                     agent.reset();
@@ -307,17 +312,17 @@ pub fn pathfinding_system(
 
 /// makes the entiry moves along the path
 pub fn movement_system(
-    mut agents_query: Query<(&mut PathfindingAgent, &mut TileMovement, &Transform)>,
+    mut agents_query: Query<(&mut PathfindingAgent, &mut TileMovement, &GridPos)>,
 ) {
-    for (mut agent, mut tile_movement, transform) in agents_query.iter_mut() {
+    for (mut agent, mut tile_movement, grid_pos) in agents_query.iter_mut() {
         if agent.path.is_empty() {
             continue;
         }
 
-        let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+        // let current_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
         if let Some(last_tile_pos) = agent.last_tile_pos
-            && last_tile_pos == current_tile_pos
+            && last_tile_pos == *grid_pos
         {
             agent.stuck_ticks_counter += 1;
         }
@@ -328,7 +333,7 @@ pub fn movement_system(
 
         // remove all leading waypoints that are equal to current pos
         while let Some(&front) = agent.path.front() {
-            if front == current_tile_pos {
+            if front == *grid_pos {
                 agent.path.pop_front();
             } else {
                 break;
@@ -344,9 +349,9 @@ pub fn movement_system(
         let next_waypoint = *agent.path.front().unwrap();
 
         agent.stuck_ticks_counter = 0;
-        agent.last_tile_pos = Some(current_tile_pos);
+        agent.last_tile_pos = Some(*grid_pos);
 
-        let delta = next_waypoint - current_tile_pos;
+        let delta = IVec2::new(next_waypoint.x - grid_pos.x, next_waypoint.y - grid_pos.y);
         let step = IVec2::new(delta.x.signum(), delta.y.signum());
         tile_movement.direction = Direction::from(step);
     }

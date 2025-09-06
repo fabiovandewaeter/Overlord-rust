@@ -1,8 +1,8 @@
 use crate::{
     items::{CraftRecipeId, Inventory, ItemKind},
-    map::{Chest, Provider, Requester, world_pos_to_rounded_tile},
+    map::{Chest, GridPos, Provider, Requester, world_pos_to_rounded_tile},
     pathfinding::PathfindingAgent,
-    units::{UNIT_REACH, Unit, move_and_collide_units_system, states::Available},
+    units::{UNIT_REACH, Unit, movements::move_and_collide_units_system, states::Available},
 };
 use bevy::{
     ecs::{entity, system::entity_command},
@@ -37,7 +37,7 @@ impl Plugin for TasksPlugin {
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Action {
-    MoveTo(IVec2),
+    MoveTo(GridPos),
     Craft {
         recipe: CraftRecipeId,
         quantity: u32,
@@ -215,7 +215,7 @@ impl Reservations {
 
 // TODO: change that to use tiles distance instead
 // util: distance between tiles (euclidean)
-fn tile_distance(a: IVec2, b: IVec2) -> f32 {
+fn tile_distance(a: GridPos, b: GridPos) -> f32 {
     let dx = (a.x - b.x) as f32;
     let dy = (a.y - b.y) as f32;
     (dx * dx + dy * dy).sqrt()
@@ -229,19 +229,19 @@ fn actions_decompose_planner_system(
     mut unit_query: Query<
         (
             Entity,
-            &Transform,
-            &mut Inventory,
+            &GridPos,
+            &Inventory,
             &mut ActionQueue,
             &mut CurrentTask,
         ),
         (With<Unit>, With<PathfindingAgent>),
     >,
     provider_chest_query: Query<
-        (Entity, &GlobalTransform, &Inventory),
+        (Entity, &GridPos, &Inventory),
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     requester_chest_query: Query<
-        (Entity, &GlobalTransform),
+        (Entity, &GridPos),
         (
             With<Chest>,
             With<Requester>,
@@ -251,7 +251,7 @@ fn actions_decompose_planner_system(
         ),
     >,
 ) {
-    for (unit_ent, transform, mut unit_inv, mut action_queue, mut current_task) in
+    for (unit_ent, unit_grid_pos, unit_inv, mut action_queue, mut current_task) in
         unit_query.iter_mut()
     {
         let Some(task) = &mut current_task.task else {
@@ -271,11 +271,12 @@ fn actions_decompose_planner_system(
                     continue;
                 }
                 let needed = quantity - have;
-                let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+                // let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
                 // find best chest taking into account reservations
-                if let Some((chest_ent, chest_tile_pos, available)) = find_best_chest(
-                    unit_tile_pos,
+                if let Some((chest_ent, chest_grid_pos, available)) = find_best_chest(
+                    // unit_tile_pos,
+                    *unit_grid_pos,
                     needed,
                     kind,
                     &provider_chest_query,
@@ -285,12 +286,12 @@ fn actions_decompose_planner_system(
                     let take_qty = std::cmp::min(needed, available);
 
                     // chest inventory borrow for reservation check
-                    if let Ok((_ent, _global_tf, chest_inv)) = provider_chest_query.get(chest_ent) {
+                    if let Ok((ent, grid_pos, chest_inv)) = provider_chest_query.get(chest_ent) {
                         // try to reserve
                         if reservations.try_reserve(unit_ent, chest_ent, kind, take_qty, chest_inv)
                         {
                             // Plan actions: MoveTo -> Take
-                            action_queue.0.push_back(Action::MoveTo(chest_tile_pos));
+                            action_queue.0.push_back(Action::MoveTo(chest_grid_pos));
                             action_queue.0.push_back(Action::Take {
                                 kind,
                                 quantity: take_qty,
@@ -318,17 +319,17 @@ fn actions_decompose_planner_system(
 
             TaskKind::DeliverItems { kind, quantity } => {
                 // position de l'unité
-                let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
+                // let unit_tile_pos = world_pos_to_rounded_tile(transform.translation.xy());
 
                 // cherche le requester chest le plus proche (si il y en a plusieurs)
-                let mut best: Option<(Entity, IVec2, f32)> = None; // (entity, tile_pos, dist)
-                for (req_ent, req_global_tf) in requester_chest_query.iter() {
-                    let req_pos = world_pos_to_rounded_tile(req_global_tf.translation().xy());
-                    let dist = tile_distance(unit_tile_pos, req_pos);
+                let mut best: Option<(Entity, GridPos, f32)> = None; // (entity, grid_pos, dist)
+                for (req_ent, req_grid_pos) in requester_chest_query.iter() {
+                    // let req_pos = world_pos_to_rounded_tile(req_global_tf.translation().xy());
+                    let dist = tile_distance(*unit_grid_pos, *req_grid_pos);
                     match &best {
-                        None => best = Some((req_ent, req_pos, dist)),
+                        None => best = Some((req_ent, *req_grid_pos, dist)),
                         Some((_, _, best_dist)) if dist < *best_dist => {
-                            best = Some((req_ent, req_pos, dist))
+                            best = Some((req_ent, *req_grid_pos, dist))
                         }
                         _ => {}
                     }
@@ -414,7 +415,7 @@ pub fn process_current_action_system(
     mut unit_query: Query<
         (
             Entity,
-            &Transform,
+            &GridPos,
             &mut Inventory,
             &mut CurrentAction,
             &mut PathfindingAgent,
@@ -422,11 +423,11 @@ pub fn process_current_action_system(
         With<Unit>,
     >,
     mut provider_chest_query: Query<
-        (Entity, &GlobalTransform, &mut Inventory),
+        (Entity, &GridPos, &mut Inventory),
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     mut requester_chest_query: Query<
-        (&GlobalTransform, &mut Inventory),
+        (&mut Inventory, &GridPos),
         (
             With<Chest>,
             With<Requester>,
@@ -435,7 +436,7 @@ pub fn process_current_action_system(
         ),
     >,
 ) {
-    for (unit_ent, unit_transform, mut unit_inventory, mut current_action, mut pathfinding_agent) in
+    for (unit_ent, unit_grid_pos, mut unit_inventory, mut current_action, mut pathfinding_agent) in
         unit_query.iter_mut()
     {
         if current_action.action.is_none() {
@@ -446,7 +447,6 @@ pub fn process_current_action_system(
                 Some(Action::MoveTo(target_pos)) => {
                     pathfinding_agent.reset();
                     pathfinding_agent.target = Some(*target_pos);
-                    // pathfinding_agent.path.clear();
                 }
                 _ => {}
             }
@@ -456,10 +456,9 @@ pub fn process_current_action_system(
         if let Some(action) = &mut current_action.action {
             match action {
                 Action::MoveTo(target_pos) => {
-                    let current_unit_tile_pos =
-                        world_pos_to_rounded_tile(unit_transform.translation.xy());
+                    // let current_unit_tile_pos = world_pos_to_rounded_tile(unit_transform.translation.xy());
                     // let distance = current_unit_tile_pos.distance(*target_pos);
-                    let distance = tile_distance(current_unit_tile_pos, *target_pos);
+                    let distance = tile_distance(*unit_grid_pos, *target_pos);
 
                     // Si on est assez proche de la destination, considérer la tâche terminée
                     if pathfinding_agent.path.is_empty() && distance as u8 <= UNIT_REACH {
@@ -474,16 +473,17 @@ pub fn process_current_action_system(
                     from,
                 } => {
                     // try to get the chest mutably
-                    if let Ok((chest_ent, global_transform, mut provider_inventory)) =
+                    if let Ok((chest_ent, chest_grid_pos, mut provider_inventory)) =
                         provider_chest_query.get_mut(*from)
                     {
                         // checks if the target is at reach
-                        let current_target_tile_pos =
-                            world_pos_to_rounded_tile(global_transform.translation().xy());
-                        let current_unit_tile_pos =
-                            world_pos_to_rounded_tile(unit_transform.translation.xy());
-                        let distance =
-                            tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        // let current_target_tile_pos =
+                        //     world_pos_to_rounded_tile(global_transform.translation().xy());
+                        // let current_unit_tile_pos =
+                        //     world_pos_to_rounded_tile(unit_transform.translation.xy());
+                        // let distance =
+                        //     tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        let distance = tile_distance(*chest_grid_pos, *unit_grid_pos);
                         if distance as u8 > UNIT_REACH {
                             current_action.action = None;
                             continue;
@@ -515,16 +515,17 @@ pub fn process_current_action_system(
                 }
 
                 Action::Drop { kind, quantity, to } => {
-                    if let Ok((global_transform, mut requester_inventory)) =
+                    if let Ok((mut requester_inventory, grid_pos)) =
                         requester_chest_query.get_mut(*to)
                     {
                         // checks if the target is at reach
-                        let current_target_tile_pos =
-                            world_pos_to_rounded_tile(global_transform.translation().xy());
-                        let current_unit_tile_pos =
-                            world_pos_to_rounded_tile(unit_transform.translation.xy());
-                        let distance =
-                            tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        // let current_target_tile_pos =
+                        //     world_pos_to_rounded_tile(global_transform.translation().xy());
+                        // let current_unit_tile_pos =
+                        //     world_pos_to_rounded_tile(unit_transform.translation.xy());
+                        // let distance =
+                        //     tile_distance(current_target_tile_pos, current_unit_tile_pos);
+                        let distance = tile_distance(*grid_pos, *unit_grid_pos);
                         if distance as u8 > UNIT_REACH {
                             current_action.action = None;
                             continue;
@@ -550,7 +551,7 @@ pub fn process_current_action_system(
                     with: _,
                 } => {
                     // TODO: do that
-                    todo!();
+                    todo!("process_current_action_system() : case Action::Craft");
                     current_action.action = None;
                 }
             }
@@ -604,42 +605,45 @@ fn update_task_completion_system(
 }
 
 fn find_best_chest(
-    unit_tile_pos: IVec2,
+    unit_tile_pos: GridPos,
     desired_quantity: u32,
     desired_item_kind: ItemKind,
     chest_query: &Query<
-        (Entity, &GlobalTransform, &Inventory),
+        (Entity, &GridPos, &Inventory),
         (With<Chest>, With<Provider>, Without<Unit>),
     >,
     reservations: &Reservations,
-) -> Option<(Entity, IVec2, u32)> {
-    let mut best_with_enough: Option<(Entity, IVec2, u32, f32)> = None; // (entity, tile, qty, distance)
-    let mut best_any: Option<(Entity, IVec2, u32, f32)> = None; // nearest with at least 1
+) -> Option<(Entity, GridPos, u32)> {
+    let mut best_with_enough: Option<(Entity, GridPos, u32, f32)> = None; // (entity, tile, qty, distance)
+    let mut best_any: Option<(Entity, GridPos, u32, f32)> = None; // nearest with at least 1
 
-    for (chest_ent, chest_global_transform, chest_inv) in chest_query.iter() {
-        let chest_tile = world_pos_to_rounded_tile(chest_global_transform.translation().xy());
-        let dist = tile_distance(unit_tile_pos, chest_tile);
+    for (chest_ent, chest_grid_pos, chest_inv) in chest_query.iter() {
+        // let chest_tile = world_pos_to_rounded_tile(chest_global_transform.translation().xy());
+        // let dist = tile_distance(unit_tile_pos, chest_tile);
+        let dist = tile_distance(unit_tile_pos, *chest_grid_pos);
         let real_quantity = chest_inv.count(&desired_item_kind);
         let already_reserved = reservations.total_reserved(chest_ent, desired_item_kind);
-        let available = real_quantity.saturating_sub(already_reserved);
+        let available_quantity = real_quantity.saturating_sub(already_reserved);
 
-        if available == 0 {
+        if available_quantity == 0 {
             continue;
         }
 
-        if available >= desired_quantity {
+        if available_quantity >= desired_quantity {
             match &best_with_enough {
-                None => best_with_enough = Some((chest_ent, chest_tile, available, dist)),
+                None => {
+                    best_with_enough = Some((chest_ent, *chest_grid_pos, available_quantity, dist))
+                }
                 Some((_, _, _, best_dist)) if dist < *best_dist => {
-                    best_with_enough = Some((chest_ent, chest_tile, available, dist))
+                    best_with_enough = Some((chest_ent, *chest_grid_pos, available_quantity, dist))
                 }
                 _ => {}
             }
         } else {
             match &best_any {
-                None => best_any = Some((chest_ent, chest_tile, available, dist)),
+                None => best_any = Some((chest_ent, *chest_grid_pos, available_quantity, dist)),
                 Some((_, _, _, best_dist)) if dist < *best_dist => {
-                    best_any = Some((chest_ent, chest_tile, available, dist))
+                    best_any = Some((chest_ent, *chest_grid_pos, available_quantity, dist))
                 }
                 _ => {}
             }

@@ -1,5 +1,5 @@
 use crate::units::Unit;
-use bevy::{ecs::system::entity_command, prelude::*};
+use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
 use rand::Rng;
 use std::collections::HashMap;
@@ -31,15 +31,84 @@ impl Plugin for MapPlugin {
     }
 }
 
+#[derive(Component, Default, Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct GridPos {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl GridPos {
+    pub fn to_chunk_pos(self) -> ChunkPos {
+        ChunkPos {
+            x: self.x * CHUNK_SIZE.x as i32,
+            y: self.y * CHUNK_SIZE.y as i32,
+        }
+    }
+
+    pub fn into_IVec2(self) -> IVec2 {
+        IVec2 {
+            x: self.x,
+            y: self.y,
+        }
+    }
+}
+
+impl From<ChunkPos> for GridPos {
+    fn from(pos: ChunkPos) -> Self {
+        Self {
+            x: pos.x * CHUNK_SIZE.x as i32,
+            y: pos.y * CHUNK_SIZE.y as i32,
+        }
+    }
+}
+
+impl std::ops::Add<IVec2> for GridPos {
+    type Output = Self;
+
+    fn add(self, left: IVec2) -> Self {
+        Self {
+            x: self.x + left.x,
+            y: self.y + left.y,
+        }
+    }
+}
+
+impl std::ops::Sub<IVec2> for GridPos {
+    type Output = Self;
+
+    fn sub(self, left: IVec2) -> Self {
+        Self {
+            x: self.x - left.x,
+            y: self.y - left.y,
+        }
+    }
+}
+
+/// ChunkPos {x: 2, y: 2} <=> GridPos {x: 2*CHUNK_SIZE, y: 2*CHUNK_SIZE}
+#[derive(Component, Default, Debug, Hash, Clone, Copy, PartialEq, Eq)]
+pub struct ChunkPos {
+    pub x: i32,
+    pub y: i32,
+}
+
+impl From<GridPos> for ChunkPos {
+    fn from(pos: GridPos) -> Self {
+        Self {
+            x: pos.x / CHUNK_SIZE.x as i32,
+            y: pos.y / CHUNK_SIZE.y as i32,
+        }
+    }
+}
+
 #[derive(Resource, Default, Debug)]
 pub struct ChunkManager {
-    pub spawned_chunks: HashMap<IVec2, Entity>, // rounded_chunk_pos -> chunk
+    pub spawned_chunks: HashMap<ChunkPos, Entity>, // ChunkPos -> chunk
 }
 
 /// to quickly find the Structure at coordinates without checking every Structure
 #[derive(Resource, Default, Debug)]
 pub struct StructureManager {
-    pub structures: HashMap<IVec2, Entity>, // rounded_tile_pos -> structure
+    pub structures: HashMap<GridPos, Entity>, // GridPos -> structure
 }
 
 #[derive(Component)]
@@ -63,7 +132,7 @@ pub fn spawn_chunk(
     commands: &mut Commands,
     asset_server: &AssetServer,
     mut structure_manager: &mut ResMut<StructureManager>,
-    chunk_pos: IVec2,
+    chunk_pos: ChunkPos,
 ) -> Entity {
     let tilemap_entity = commands.spawn_empty().id();
     let mut tile_storage = TileStorage::empty(CHUNK_SIZE.into());
@@ -90,8 +159,10 @@ pub fn spawn_chunk(
                 && (chunk_pos.x > 0 || chunk_pos.x < 0)
                 && (chunk_pos.y > 0 || chunk_pos.y < 0)
             {
-                let local_tile_pos: IVec2 =
-                    IVec2::new(local_tile_pos.x as i32, local_tile_pos.y as i32);
+                let local_tile_pos = GridPos {
+                    x: local_tile_pos.x as i32,
+                    y: local_tile_pos.y as i32,
+                };
                 let rounded_tile_pos = local_tile_pos_to_rounded_tile(local_tile_pos, chunk_pos);
                 structures_to_spawn.push(rounded_tile_pos);
             }
@@ -106,7 +177,8 @@ pub fn spawn_chunk(
     }
 
     // Calcule la position du tilemap dans le monde
-    let rounded_tile_pos = rounded_chunk_pos_to_rounded_tile(&chunk_pos);
+    // let rounded_tile_pos = rounded_chunk_pos_to_rounded_tile(&chunk_pos);
+    let rounded_tile_pos = GridPos::from(chunk_pos);
     let tilemap_world_pos = rounded_tile_pos_to_world(rounded_tile_pos);
     let tilemap_transform = Transform::from_translation(Vec3::new(
         tilemap_world_pos.x,
@@ -166,7 +238,7 @@ fn spawn_structure_in_chunk(
     structure_entity: &Entity,
     structure_manager: &mut ResMut<StructureManager>,
     tilemap_entity: Entity,
-    rounded_tile_pos: IVec2,
+    rounded_tile_pos: GridPos,
     tilemap_world_pos: Vec2,
 ) {
     // Calcule la position absolue de la structure
@@ -205,7 +277,7 @@ pub fn place_structure(
     structure_entity: &Entity,
     structure_manager: &mut ResMut<StructureManager>,
     chunk_manager: &mut ResMut<ChunkManager>, // Maintenant mutable
-    rounded_tile_pos: IVec2,
+    rounded_tile_pos: GridPos,
 ) {
     let rounded_chunk_pos = rounded_tile_pos_to_rounded_chunk(rounded_tile_pos);
 
@@ -223,7 +295,7 @@ pub fn place_structure(
     // Maintenant le chunk existe forcément
     if let Some(&tilemap_entity) = chunk_manager.spawned_chunks.get(&rounded_chunk_pos) {
         let tilemap_world_pos =
-            rounded_tile_pos_to_world(rounded_chunk_pos_to_rounded_tile(&rounded_chunk_pos));
+            rounded_tile_pos_to_world(rounded_chunk_pos_to_rounded_tile(rounded_chunk_pos));
 
         spawn_structure_in_chunk(
             commands,
@@ -238,18 +310,18 @@ pub fn place_structure(
     }
 }
 
-pub fn get_neighbors(pos: IVec2) -> impl Iterator<Item = IVec2> {
+pub fn get_neighbors(pos: GridPos) -> impl Iterator<Item = GridPos> {
     (-1..=1)
         .flat_map(move |x| (-1..=1).map(move |y| (x, y)))
         .filter(|&(x, y)| x != 0 || y != 0)
-        .map(move |(dx, dy)| IVec2 {
+        .map(move |(dx, dy)| GridPos {
             x: pos.x + dx,
             y: pos.y + dy,
         })
 }
 
 pub fn is_tile_passable(
-    rounded_tile_pos: IVec2,
+    rounded_tile_pos: GridPos,
     structure_manager: &Res<StructureManager>,
 ) -> bool {
     if let Some(_structure_entity) = structure_manager.structures.get(&rounded_tile_pos) {
@@ -263,11 +335,14 @@ pub fn is_tile_passable(
 // ========= coordinates conversion =========
 // world_pos = (5.5 * TILE_SIZE.X, 0.5 * TILE_SIZE.y) | tile_pos = (5.5, 0.5) | rounded_tile_pos = (5, 0)
 
-pub fn local_tile_pos_to_rounded_tile(local_tile_pos: IVec2, rounded_chunk_pos: IVec2) -> IVec2 {
-    IVec2::new(
-        rounded_chunk_pos.x * CHUNK_SIZE.x as i32 + local_tile_pos.x,
-        rounded_chunk_pos.y * CHUNK_SIZE.y as i32 + local_tile_pos.y,
-    )
+pub fn local_tile_pos_to_rounded_tile(
+    local_tile_pos: GridPos,
+    rounded_chunk_pos: ChunkPos,
+) -> GridPos {
+    GridPos {
+        x: rounded_chunk_pos.x * CHUNK_SIZE.x as i32 + local_tile_pos.x,
+        y: rounded_chunk_pos.y * CHUNK_SIZE.y as i32 + local_tile_pos.y,
+    }
 }
 
 // Conversion coordonnées logiques -> monde ; (5.5, 0.5) => (5.5 * TILE_SIZE.x, 0.5 * TILE_SIZE.y)
@@ -276,7 +351,7 @@ pub fn tile_pos_to_world(tile_pos: Vec2) -> Vec2 {
 }
 
 // adds 0.5 to coordinates to make entities spawn based on the corner of there sprite and not the center
-pub fn rounded_tile_pos_to_world(rounded_tile_pos: IVec2) -> Vec2 {
+pub fn rounded_tile_pos_to_world(rounded_tile_pos: GridPos) -> Vec2 {
     Vec2::new(
         rounded_tile_pos.x as f32 * TILE_SIZE.x + 0.5 * TILE_SIZE.x,
         rounded_tile_pos.y as f32 * TILE_SIZE.y + 0.5 * TILE_SIZE.y,
@@ -284,8 +359,11 @@ pub fn rounded_tile_pos_to_world(rounded_tile_pos: IVec2) -> Vec2 {
 }
 
 // (5.5, 0.5) => (5, 0)
-pub fn tile_pos_to_rounded_tile(tile_pos: Vec2) -> IVec2 {
-    IVec2::new(tile_pos.x.floor() as i32, tile_pos.y.floor() as i32)
+pub fn tile_pos_to_rounded_tile(tile_pos: Vec2) -> GridPos {
+    GridPos {
+        x: tile_pos.x.floor() as i32,
+        y: tile_pos.y.floor() as i32,
+    }
 }
 
 // Conversion monde -> coordonnées logiques
@@ -294,50 +372,50 @@ pub fn world_pos_to_tile(world_pos: Vec2) -> Vec2 {
 }
 
 // Conversion monde -> coordonnées logiques
-pub fn world_pos_to_rounded_tile(world_pos: Vec2) -> IVec2 {
-    IVec2::new(
-        (world_pos.x / TILE_SIZE.x).floor() as i32,
-        (world_pos.y / TILE_SIZE.y).floor() as i32,
-    )
+pub fn world_pos_to_rounded_tile(world_pos: Vec2) -> GridPos {
+    GridPos {
+        x: (world_pos.x / TILE_SIZE.x).floor() as i32,
+        y: (world_pos.y / TILE_SIZE.y).floor() as i32,
+    }
 }
 
 /// Convertit une position monde (pixels) en position de chunk.
-pub fn world_pos_to_rounded_chunk(world_pos: &Vec2) -> IVec2 {
-    // let chunk_size_pixels = CHUNK_SIZE.as_vec2() * Vec2::new(TILE_SIZE.x, TILE_SIZE.y);
-    // let pos = *world_pos / chunk_size_pixels;
-    // IVec2::new(pos.x.floor() as i32, pos.y.floor() as i32)
-    IVec2::new(
-        (world_pos.x / (CHUNK_SIZE.x as f32 * TILE_SIZE.x)).floor() as i32,
-        (world_pos.y / (CHUNK_SIZE.y as f32 * TILE_SIZE.y)).floor() as i32,
-    )
+pub fn world_pos_to_rounded_chunk(world_pos: Vec2) -> ChunkPos {
+    ChunkPos {
+        x: (world_pos.x / (CHUNK_SIZE.x as f32 * TILE_SIZE.x)).floor() as i32,
+        y: (world_pos.y / (CHUNK_SIZE.y as f32 * TILE_SIZE.y)).floor() as i32,
+    }
 }
 
-pub fn rounded_chunk_pos_to_rounded_tile(rounded_chunk_pos: &IVec2) -> IVec2 {
-    IVec2::new(
-        rounded_chunk_pos.x * CHUNK_SIZE.x as i32,
-        rounded_chunk_pos.y * CHUNK_SIZE.y as i32,
-    )
+pub fn rounded_chunk_pos_to_rounded_tile(rounded_chunk_pos: ChunkPos) -> GridPos {
+    GridPos {
+        x: rounded_chunk_pos.x * CHUNK_SIZE.x as i32,
+        y: rounded_chunk_pos.y * CHUNK_SIZE.y as i32,
+    }
 }
 
-pub fn rounded_tile_pos_to_rounded_chunk(rounded_tile_pos: IVec2) -> IVec2 {
-    IVec2::new(
-        rounded_tile_pos.x / CHUNK_SIZE.x as i32,
-        rounded_tile_pos.y / CHUNK_SIZE.y as i32,
-    )
+pub fn rounded_tile_pos_to_rounded_chunk(rounded_tile_pos: GridPos) -> ChunkPos {
+    ChunkPos {
+        x: rounded_tile_pos.x / CHUNK_SIZE.x as i32,
+        y: rounded_tile_pos.y / CHUNK_SIZE.y as i32,
+    }
 }
 
-pub fn tile_pos_to_rounded_chunk(tile_pos: Vec2) -> IVec2 {
-    IVec2::new(
-        (tile_pos.x / CHUNK_SIZE.x as f32).floor() as i32,
-        (tile_pos.y / CHUNK_SIZE.y as f32).floor() as i32,
-    )
+pub fn tile_pos_to_rounded_chunk(tile_pos: Vec2) -> ChunkPos {
+    ChunkPos {
+        x: (tile_pos.x / CHUNK_SIZE.x as f32).floor() as i32,
+        y: (tile_pos.y / CHUNK_SIZE.y as f32).floor() as i32,
+    }
 }
 
-pub fn camera_pos_to_rounded_chunk_pos(camera_pos: &Vec2) -> IVec2 {
+pub fn camera_pos_to_rounded_chunk_pos(camera_pos: Vec2) -> ChunkPos {
     let camera_pos = camera_pos.as_ivec2();
     let chunk_size: IVec2 = IVec2::new(CHUNK_SIZE.x as i32, CHUNK_SIZE.y as i32);
     let tile_size: IVec2 = IVec2::new(TILE_SIZE.x as i32, TILE_SIZE.y as i32);
-    camera_pos / (chunk_size * tile_size)
+    ChunkPos {
+        x: camera_pos.x / (chunk_size.x * tile_size.x),
+        y: camera_pos.y / (chunk_size.y * tile_size.y),
+    }
 }
 // ==========================================
 
@@ -350,10 +428,10 @@ fn spawn_chunks_around_camera_system(
 ) {
     const SIZE: i32 = 4;
     for transform in camera_query.iter() {
-        let camera_chunk_pos = world_pos_to_rounded_chunk(&transform.translation.xy());
+        let camera_chunk_pos = world_pos_to_rounded_chunk(transform.translation.xy());
         for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
             for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
-                let chunk_pos = IVec2::new(x, y);
+                let chunk_pos = ChunkPos { x, y };
                 if !chunk_manager.spawned_chunks.contains_key(&chunk_pos) {
                     let entity = spawn_chunk(
                         &mut commands,
@@ -378,11 +456,11 @@ fn spawn_chunks_around_units_system(
     const SIZE: i32 = 2;
     // for transform in camera_query.iter() {
     for unit_transform in unit_query {
-        let camera_chunk_pos = camera_pos_to_rounded_chunk_pos(&unit_transform.translation.xy());
+        let camera_chunk_pos = camera_pos_to_rounded_chunk_pos(unit_transform.translation.xy());
         for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
             for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
-                let chunk_pos = IVec2::new(x, y);
-                if !chunk_manager.spawned_chunks.contains_key(&IVec2::new(x, y)) {
+                let chunk_pos = ChunkPos { x, y };
+                if !chunk_manager.spawned_chunks.contains_key(&chunk_pos) {
                     let entity = spawn_chunk(
                         &mut commands,
                         &asset_server,

@@ -1,17 +1,17 @@
 use crate::{
     items::{Inventory, ItemKind, display_inventories},
     map::{
-        Chest, ChunkManager, Crafter, MapPlugin, Provider, Requester, Structure, StructureManager,
-        TILE_SIZE, place_structure, rounded_tile_pos_to_world,
+        Chest, ChunkManager, Crafter, GridPos, MapPlugin, Provider, Requester, Structure,
+        StructureManager, TILE_SIZE, place_structure, rounded_tile_pos_to_world,
     },
     pathfinding::PathfindingPlugin,
     units::{
-        Player, TileMovement, Unit, UnitUnitCollisions, UnitsPlugin,
-        display_units_inventory_system, display_units_with_no_current_action_system,
-        move_and_collide_units_system,
+        Player, Unit, UnitUnitCollisions, UnitsPlugin, display_units_inventory_system,
+        display_units_with_no_current_action_system,
+        movements::TileMovement,
         states::Available,
         tasks::{TasksPlugin, display_reservations_system},
-        test_units_control_system, update_sprite_facing_system,
+        test_units_control_system,
     },
 };
 use bevy::{
@@ -35,7 +35,7 @@ mod units;
 pub const UPS_TARGET: f64 = 30.0;
 const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
 const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
-// const CAMERA_SPEED: f32 = 37.5;
+const CAMERA_SPEED: f32 = 37.5;
 
 fn main() {
     App::new()
@@ -83,6 +83,27 @@ fn main() {
         .run();
 }
 
+#[derive(Component)]
+struct CameraMovement(CameraMovementKind);
+
+#[derive(Clone, Copy)]
+enum CameraMovementKind {
+    SmoothFollowPlayer,
+    DirectFollowPlayer,
+    FreeCamera,
+}
+
+impl CameraMovementKind {
+    fn next(self) -> Self {
+        use CameraMovementKind::*;
+        match self {
+            SmoothFollowPlayer => DirectFollowPlayer,
+            DirectFollowPlayer => FreeCamera,
+            FreeCamera => SmoothFollowPlayer,
+        }
+    }
+}
+
 fn setup_system(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -94,7 +115,12 @@ fn setup_system(
     let mut orthographic_projection = OrthographicProjection::default_2d();
     orthographic_projection.scale *= 0.8;
     let projection = Projection::Orthographic(orthographic_projection);
-    commands.spawn((Camera2d, Camera { ..default() }, projection));
+    commands.spawn((
+        Camera2d,
+        Camera { ..default() },
+        projection,
+        CameraMovement(CameraMovementKind::FreeCamera),
+    ));
     commands.spawn((
         Mesh2d(meshes.add(Rectangle::new(20.0, 20.0))),
         MeshMaterial2d(materials.add(Color::from(GREEN))),
@@ -106,7 +132,7 @@ fn setup_system(
         // let random_multiplier = rng.random_range(1..=50);
         let random_multiplier = rng.random_range(5..=10);
         let random_speed = UPS_TARGET as u32 / random_multiplier;
-        let world_pos = rounded_tile_pos_to_world(IVec2::new(0, 0));
+        let world_pos = rounded_tile_pos_to_world(GridPos { x: 0, y: 0 });
 
         // let mut sprite = Sprite::from_image(player_texture_handle.clone());
         let sprite = Sprite {
@@ -127,7 +153,7 @@ fn setup_system(
     }
     // let speed = u32::MAX;
     let speed = UPS_TARGET as u32 / 5;
-    let world_pos = rounded_tile_pos_to_world(IVec2::new(5, 0));
+    let world_pos = rounded_tile_pos_to_world(GridPos { x: 5, y: 0 });
     // uses Unit required componenents to make it easier
     commands.spawn((
         Unit {
@@ -152,7 +178,7 @@ fn setup_system(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(10, 5);
+    let rounded_tile_pos = GridPos { x: 10, y: 5 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -174,7 +200,7 @@ fn setup_system(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(5, 10);
+    let rounded_tile_pos = GridPos { x: 5, y: 10 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -196,7 +222,7 @@ fn setup_system(
             Provider,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(5, -10);
+    let rounded_tile_pos = GridPos { x: 5, y: -10 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -218,7 +244,7 @@ fn setup_system(
             Requester,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(-10, 5);
+    let rounded_tile_pos = GridPos { x: -10, y: 5 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -240,7 +266,7 @@ fn setup_system(
             Requester,
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(-12, 5);
+    let rounded_tile_pos = GridPos { x: -12, y: 5 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -258,7 +284,7 @@ fn setup_system(
             Sprite::from_image(asset_server.load("structures/crafter.png")),
         ))
         .id();
-    let rounded_tile_pos = IVec2::new(-3, 5);
+    let rounded_tile_pos = GridPos { x: -3, y: 5 };
     place_structure(
         &mut commands,
         &asset_server,
@@ -302,52 +328,69 @@ pub fn update_logic_system(mut counter: ResMut<UpsCounter>) {
 }
 
 fn handle_camera_inputs_system(
-    mut camera_query: Query<(&mut Transform, &mut Projection), (With<Camera>, Without<Player>)>,
-    // input: Res<ButtonInput<KeyCode>>,
+    mut camera_query: Query<
+        (&mut Transform, &mut Projection, &mut CameraMovement),
+        (With<Camera>, Without<Player>),
+    >,
+    input: Res<ButtonInput<KeyCode>>,
     mut input_mouse_wheel: EventReader<MouseWheel>,
     player_query: Query<&Transform, With<Player>>,
     time: Res<Time>,
 ) {
-    let Ok((mut camera_transform, mut projection)) = camera_query.single_mut() else {
+    let Ok((mut camera_transform, mut projection, mut camera_movement)) = camera_query.single_mut()
+    else {
         return;
     };
 
-    if let Ok(player_transform) = player_query.single() {
-        let Vec3 { x, y, .. } = player_transform.translation;
-        let direction = Vec3::new(x, y, camera_transform.translation.z);
-        camera_transform
-            .translation
-            .smooth_nudge(&direction, 2., time.delta_secs());
+    if input.just_pressed(KeyCode::KeyM) {
+        camera_movement.0 = camera_movement.0.next();
     }
 
-    // // free Camera movement controls
-    // let mut direction = Vec3::ZERO;
-    // if input.pressed(KeyCode::KeyW) {
-    //     direction.y += 1.0;
-    // }
-    // if input.pressed(KeyCode::KeyS) {
-    //     direction.y -= 1.0;
-    // }
-    // if input.pressed(KeyCode::KeyA) {
-    //     direction.x -= 1.0;
-    // }
-    // if input.pressed(KeyCode::KeyD) {
-    //     direction.x += 1.0;
-    // }
-    //
-    // // Récupérer le niveau de zoom actuel
-    // let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
-    //     projection2d.scale
-    // } else {
-    //     1.0 // Valeur par défaut si ce n'est pas une projection orthographique
-    // };
-    //
-    // // normalizes to have constant diagonal speed
-    // if direction != Vec3::ZERO {
-    //     direction = direction.normalize();
-    //     let speed_in_pixels = CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
-    //     transform.translation += direction * speed_in_pixels;
-    // }
+    if let Ok(player_transform) = player_query.single() {
+        match camera_movement.0 {
+            CameraMovementKind::SmoothFollowPlayer => {
+                let Vec3 { x, y, .. } = player_transform.translation;
+                let direction = Vec3::new(x, y, camera_transform.translation.z);
+                camera_transform
+                    .translation
+                    .smooth_nudge(&direction, 2., time.delta_secs());
+            }
+            CameraMovementKind::DirectFollowPlayer => {
+                camera_transform.translation = player_transform.translation;
+            }
+            CameraMovementKind::FreeCamera => {
+                // free Camera movement controls
+                let mut direction = Vec3::ZERO;
+                if input.pressed(KeyCode::KeyW) {
+                    direction.y += 1.0;
+                }
+                if input.pressed(KeyCode::KeyS) {
+                    direction.y -= 1.0;
+                }
+                if input.pressed(KeyCode::KeyA) {
+                    direction.x -= 1.0;
+                }
+                if input.pressed(KeyCode::KeyD) {
+                    direction.x += 1.0;
+                }
+
+                // Récupérer le niveau de zoom actuel
+                let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
+                    projection2d.scale
+                } else {
+                    1.0 // Valeur par défaut si ce n'est pas une projection orthographique
+                };
+
+                // normalizes to have constant diagonal speed
+                if direction != Vec3::ZERO {
+                    direction = direction.normalize();
+                    let speed_in_pixels =
+                        CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
+                    camera_transform.translation += direction * speed_in_pixels;
+                }
+            }
+        }
+    }
 
     // zoom controls
     if let Projection::Orthographic(projection2d) = &mut *projection {
@@ -384,7 +427,7 @@ fn control_time_system(
     mut time_state: ResMut<TimeState>,
 ) {
     // P pour Pause, pour alterner entre l'état de pause
-    if input.just_pressed(KeyCode::KeyP) {
+    if input.just_pressed(KeyCode::Space) {
         if time_state.is_paused {
             println!("Temps de la simulation repris.");
             fixed_time.set_timestep_hz(UPS_TARGET);
