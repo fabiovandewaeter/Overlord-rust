@@ -120,12 +120,6 @@ pub fn move_and_collide_units_system(
                 target_tile,
                 new_direction,
             } => {
-                // apply_movement(
-                //     &mut transform,
-                //     &mut tile_movement,
-                //     target_tile,
-                //     new_direction,
-                // );
                 grid_pos.x = target_tile.x;
                 grid_pos.y = target_tile.y;
                 tile_movement.direction = new_direction;

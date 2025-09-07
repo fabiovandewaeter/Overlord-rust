@@ -132,7 +132,7 @@ fn setup_system(
         // let random_multiplier = rng.random_range(1..=50);
         let random_multiplier = rng.random_range(5..=10);
         let random_speed = UPS_TARGET as u32 / random_multiplier;
-        let world_pos = rounded_tile_pos_to_world(GridPos { x: 0, y: 0 });
+        // let world_pos = rounded_tile_pos_to_world(GridPos { x: 0, y: 0 });
 
         // let mut sprite = Sprite::from_image(player_texture_handle.clone());
         let sprite = Sprite {
@@ -145,22 +145,24 @@ fn setup_system(
                 name: "Unit".into(),
             },
             sprite,
-            Transform::from_translation(world_pos.extend(0.0)),
+            // Transform::from_translation(world_pos.extend(0.0)),
             TileMovement::new(random_speed),
+            GridPos { x: 0, y: 0 },
             Available,
             UnitUnitCollisions,
         ));
     }
     // let speed = u32::MAX;
     let speed = UPS_TARGET as u32 / 5;
-    let world_pos = rounded_tile_pos_to_world(GridPos { x: 5, y: 0 });
+    // let world_pos = rounded_tile_pos_to_world(GridPos { x: 5, y: 0 });
     // uses Unit required componenents to make it easier
     commands.spawn((
         Unit {
             name: "Player".into(),
         },
         Sprite::from_image(player_texture_handle.clone()),
-        Transform::from_translation(world_pos.extend(0.0)),
+        // Transform::from_translation(world_pos.extend(0.0)),
+        GridPos { x: 5, y: 0 },
         TileMovement::new(speed),
         UnitUnitCollisions,
         Player,

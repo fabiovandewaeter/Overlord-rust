@@ -253,6 +253,8 @@ fn spawn_structure_in_chunk(
         STRUCTURE_LAYER_LEVEL - TILE_LAYER_LEVEL, // Z relatif
     ));
 
+    // TODO: use GridPos instead of Transform there
+
     match commands.get_entity(*structure_entity) {
         Ok(mut entity_command) => entity_command.insert(transform),
         Err(_) => todo!(),
@@ -407,16 +409,6 @@ pub fn tile_pos_to_rounded_chunk(tile_pos: Vec2) -> ChunkPos {
         y: (tile_pos.y / CHUNK_SIZE.y as f32).floor() as i32,
     }
 }
-
-pub fn camera_pos_to_rounded_chunk_pos(camera_pos: Vec2) -> ChunkPos {
-    let camera_pos = camera_pos.as_ivec2();
-    let chunk_size: IVec2 = IVec2::new(CHUNK_SIZE.x as i32, CHUNK_SIZE.y as i32);
-    let tile_size: IVec2 = IVec2::new(TILE_SIZE.x as i32, TILE_SIZE.y as i32);
-    ChunkPos {
-        x: camera_pos.x / (chunk_size.x * tile_size.x),
-        y: camera_pos.y / (chunk_size.y * tile_size.y),
-    }
-}
 // ==========================================
 
 fn spawn_chunks_around_camera_system(
@@ -427,7 +419,7 @@ fn spawn_chunks_around_camera_system(
     mut structure_manager: ResMut<StructureManager>,
 ) {
     const SIZE: i32 = 4;
-    for transform in camera_query.iter() {
+    if let Ok(transform) = camera_query.single() {
         let camera_chunk_pos = world_pos_to_rounded_chunk(transform.translation.xy());
         for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
             for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
@@ -449,16 +441,15 @@ fn spawn_chunks_around_camera_system(
 fn spawn_chunks_around_units_system(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    unit_query: Query<&Transform, With<Unit>>,
+    unit_query: Query<&GridPos, With<Unit>>,
     mut chunk_manager: ResMut<ChunkManager>,
     mut structure_manager: ResMut<StructureManager>,
 ) {
     const SIZE: i32 = 2;
-    // for transform in camera_query.iter() {
-    for unit_transform in unit_query {
-        let camera_chunk_pos = camera_pos_to_rounded_chunk_pos(unit_transform.translation.xy());
-        for y in (camera_chunk_pos.y - SIZE)..(camera_chunk_pos.y + SIZE) {
-            for x in (camera_chunk_pos.x - SIZE)..(camera_chunk_pos.x + SIZE) {
+    for unit_grid_pos in unit_query.iter() {
+        let unit_chunk_pos = rounded_tile_pos_to_rounded_chunk(*unit_grid_pos);
+        for y in (unit_chunk_pos.y - SIZE)..(unit_chunk_pos.y + SIZE) {
+            for x in (unit_chunk_pos.x - SIZE)..(unit_chunk_pos.x + SIZE) {
                 let chunk_pos = ChunkPos { x, y };
                 if !chunk_manager.spawned_chunks.contains_key(&chunk_pos) {
                     let entity = spawn_chunk(

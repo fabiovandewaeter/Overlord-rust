@@ -39,7 +39,7 @@ impl Plugin for UnitsPlugin {
 #[derive(Component, Debug, Default)]
 #[require(
     Sprite,
-    Transform,
+    // Transform,
     GridPos,
     TileMovement,
     PathfindingAgent,
