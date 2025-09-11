@@ -254,9 +254,16 @@ fn spawn_structure_in_chunk(
     ));
 
     // TODO: use GridPos instead of Transform there
+    let global_grid_pos = GridPos {
+        x: rounded_tile_pos.x,
+        y: rounded_tile_pos.y,
+    };
 
     match commands.get_entity(*structure_entity) {
-        Ok(mut entity_command) => entity_command.insert(transform),
+        Ok(mut entity_command) => {
+            entity_command.insert(transform);
+            entity_command.insert(global_grid_pos);
+        }
         Err(_) => todo!(),
     };
 

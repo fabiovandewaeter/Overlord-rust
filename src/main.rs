@@ -1,19 +1,3 @@
-use crate::{
-    items::{Inventory, ItemKind, display_inventories},
-    map::{
-        Chest, ChunkManager, Crafter, GridPos, MapPlugin, Provider, Requester, Structure,
-        StructureManager, TILE_SIZE, place_structure, rounded_tile_pos_to_world,
-    },
-    pathfinding::PathfindingPlugin,
-    units::{
-        Player, Unit, UnitUnitCollisions, UnitsPlugin, display_units_inventory_system,
-        display_units_with_no_current_action_system,
-        movements::TileMovement,
-        states::Available,
-        tasks::{TasksPlugin, display_reservations_system},
-        test_units_control_system,
-    },
-};
 use bevy::{
     color::palettes::css::GREEN,
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
@@ -24,18 +8,27 @@ use bevy::{
     prelude::*,
     time::common_conditions::on_timer,
 };
+use overlord_rust::{
+    CAMERA_SPEED, UPS_TARGET, ZOOM_IN_SPEED, ZOOM_OUT_SPEED,
+    camera::{
+        CameraMovement, CameraMovementKind, UpsCounter, display_fps_ups_system,
+        handle_camera_inputs_system,
+    },
+    items::{Inventory, ItemKind, display_inventories},
+    map::{
+        Chest, ChunkManager, Crafter, GridPos, MapPlugin, Provider, Requester, Structure,
+        StructureManager, TILE_SIZE, place_structure,
+    },
+    pathfinding::PathfindingPlugin,
+    units::{
+        Player, Unit, UnitUnitCollisions, UnitsPlugin,
+        movements::TileMovement,
+        states::Available,
+        tasks::{TasksPlugin, display_reservations_system},
+    },
+};
 use rand::{Rng, rng};
 use std::time::Duration;
-
-mod items;
-mod map;
-mod pathfinding;
-mod units;
-
-pub const UPS_TARGET: f64 = 30.0;
-const ZOOM_IN_SPEED: f32 = 0.25 / 400000000.0;
-const ZOOM_OUT_SPEED: f32 = 4.0 * 400000000.0;
-const CAMERA_SPEED: f32 = 37.5;
 
 fn main() {
     App::new()
@@ -81,27 +74,6 @@ fn main() {
             ),
         )
         .run();
-}
-
-#[derive(Component)]
-struct CameraMovement(CameraMovementKind);
-
-#[derive(Clone, Copy)]
-enum CameraMovementKind {
-    SmoothFollowPlayer,
-    DirectFollowPlayer,
-    FreeCamera,
-}
-
-impl CameraMovementKind {
-    fn next(self) -> Self {
-        use CameraMovementKind::*;
-        match self {
-            SmoothFollowPlayer => DirectFollowPlayer,
-            DirectFollowPlayer => FreeCamera,
-            FreeCamera => SmoothFollowPlayer,
-        }
-    }
 }
 
 fn setup_system(
@@ -165,7 +137,7 @@ fn setup_system(
         GridPos { x: 5, y: 0 },
         TileMovement::new(speed),
         UnitUnitCollisions,
-        Player,
+        // Player,
     ));
 
     // provider chest
@@ -297,125 +269,8 @@ fn setup_system(
     );
 }
 
-#[derive(Resource)]
-pub struct UpsCounter {
-    ticks: u32,
-    last_second: f64,
-    ups: u32,
-}
-
-fn display_fps_ups_system(
-    time: Res<Time>,
-    diagnostics: Res<DiagnosticsStore>,
-    mut counter: ResMut<UpsCounter>,
-) {
-    let now = time.elapsed_secs_f64();
-    if now - counter.last_second >= 1.0 {
-        // Calcule l’UPS
-        counter.ups = counter.ticks;
-        counter.ticks = 0;
-        counter.last_second = now;
-
-        // Récupère le FPS depuis le plugin
-        if let Some(fps) = diagnostics.get(&FrameTimeDiagnosticsPlugin::FPS) {
-            if let Some(fps_avg) = fps.smoothed() {
-                println!("FPS: {:.0} | UPS: {}", fps_avg, counter.ups);
-            }
-        }
-    }
-}
-
 pub fn update_logic_system(mut counter: ResMut<UpsCounter>) {
     counter.ticks += 1;
-}
-
-fn handle_camera_inputs_system(
-    mut camera_query: Query<
-        (&mut Transform, &mut Projection, &mut CameraMovement),
-        (With<Camera>, Without<Player>),
-    >,
-    input: Res<ButtonInput<KeyCode>>,
-    mut input_mouse_wheel: EventReader<MouseWheel>,
-    player_query: Query<&Transform, With<Player>>,
-    time: Res<Time>,
-) {
-    let Ok((mut camera_transform, mut projection, mut camera_movement)) = camera_query.single_mut()
-    else {
-        return;
-    };
-
-    if input.just_pressed(KeyCode::KeyM) {
-        camera_movement.0 = camera_movement.0.next();
-    }
-
-    if let Ok(player_transform) = player_query.single() {
-        match camera_movement.0 {
-            CameraMovementKind::SmoothFollowPlayer => {
-                let Vec3 { x, y, .. } = player_transform.translation;
-                let direction = Vec3::new(x, y, camera_transform.translation.z);
-                camera_transform
-                    .translation
-                    .smooth_nudge(&direction, 2., time.delta_secs());
-            }
-            CameraMovementKind::DirectFollowPlayer => {
-                camera_transform.translation = player_transform.translation;
-            }
-            CameraMovementKind::FreeCamera => {
-                // free Camera movement controls
-                let mut direction = Vec3::ZERO;
-                if input.pressed(KeyCode::KeyW) {
-                    direction.y += 1.0;
-                }
-                if input.pressed(KeyCode::KeyS) {
-                    direction.y -= 1.0;
-                }
-                if input.pressed(KeyCode::KeyA) {
-                    direction.x -= 1.0;
-                }
-                if input.pressed(KeyCode::KeyD) {
-                    direction.x += 1.0;
-                }
-
-                // Récupérer le niveau de zoom actuel
-                let zoom_scale = if let Projection::Orthographic(projection2d) = &*projection {
-                    projection2d.scale
-                } else {
-                    1.0 // Valeur par défaut si ce n'est pas une projection orthographique
-                };
-
-                // normalizes to have constant diagonal speed
-                if direction != Vec3::ZERO {
-                    direction = direction.normalize();
-                    let speed_in_pixels =
-                        CAMERA_SPEED * TILE_SIZE.x * zoom_scale.powf(0.7) * time.delta_secs();
-                    camera_transform.translation += direction * speed_in_pixels;
-                }
-            }
-        }
-    }
-
-    // zoom controls
-    if let Projection::Orthographic(projection2d) = &mut *projection {
-        for mouse_wheel_event in input_mouse_wheel.read() {
-            use bevy::math::ops::powf;
-            match mouse_wheel_event.unit {
-                MouseScrollUnit::Line => {
-                    if mouse_wheel_event.y > 0.0 {
-                        projection2d.scale *= powf(ZOOM_IN_SPEED, time.delta_secs());
-                    } else if mouse_wheel_event.y < 0.0 {
-                        projection2d.scale *= powf(ZOOM_OUT_SPEED, time.delta_secs());
-                    }
-                }
-                MouseScrollUnit::Pixel => {
-                    if mouse_wheel_event.y > 0.0 {
-                        projection2d.scale *= powf(ZOOM_IN_SPEED, time.delta_secs());
-                    } else if mouse_wheel_event.y < 0.0 {
-                        projection2d.scale *= powf(ZOOM_OUT_SPEED, time.delta_secs());
-                    }
-                }
-            }
-        }
-    }
 }
 
 #[derive(Resource, Default)]

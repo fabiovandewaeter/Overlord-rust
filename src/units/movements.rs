@@ -1,7 +1,7 @@
 use crate::{
     UPS_TARGET,
     map::{
-        GridPos, StructureManager, is_tile_passable, rounded_tile_pos_to_world,
+        GridPos, Structure, StructureManager, is_tile_passable, rounded_tile_pos_to_world,
         world_pos_to_rounded_tile,
     },
     units::{Unit, UnitUnitCollisions},
@@ -132,12 +132,12 @@ pub fn move_and_collide_units_system(
 }
 
 pub fn sync_transform_to_gridpos_system(
-    mut query: Query<(&GridPos, &mut Transform)>,
+    mut query: Query<(&GridPos, &mut Transform), Without<Structure>>,
     time: Res<Time>,
 ) {
     for (grid_pos, mut transform) in query.iter_mut() {
         let target_pos = rounded_tile_pos_to_world(*grid_pos);
-        let current_pos = transform.translation.xy();
+        // let current_pos = transform.translation.xy();
 
         // Interpolation linéaire simple
         // let new_pos = current_pos.lerp(target_pos, time.delta_secs() * 10.0);

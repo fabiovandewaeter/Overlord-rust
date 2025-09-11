@@ -1,4 +1,5 @@
 use crate::{
+    camera::Selected,
     items::{CraftRecipeId, Inventory, ItemKind},
     map::{Chest, GridPos, Provider, Requester, world_pos_to_rounded_tile},
     pathfinding::PathfindingAgent,
@@ -223,7 +224,7 @@ fn tile_distance(a: GridPos, b: GridPos) -> f32 {
 
 /// Planner: decompose Task -> Actions and attempt reservations.
 /// It runs on units that have a CurrentTask (Pending) and an ActionQueue.
-fn actions_decompose_planner_system(
+pub fn actions_decompose_planner_system(
     mut commands: Commands,
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
@@ -563,7 +564,7 @@ pub fn process_current_action_system(
 /// Logic:
 /// - If a unit has a Task in Planned state and both ActionQueue empty & no CurrentAction -> mark Completed and clear task + release any leftover reservations.
 /// - If a Task is Failed -> release reservations & clear task (so it can be retried).
-fn update_task_completion_system(
+pub fn update_task_completion_system(
     mut commands: Commands,
     mut reservations: ResMut<Reservations>,
     mut unit_query: Query<
@@ -661,7 +662,24 @@ fn find_best_chest(
 
 /// Test helper: assign a GetItems task when pressing E (safe: only assign when no current task or previous task completed/failed)
 fn test_find_2_rocks_system(
-    mut unit_query: Query<&mut CurrentTask, (With<Unit>, With<PathfindingAgent>)>,
+    mut unit_query: Query<
+        &mut CurrentTask,
+        (
+            With<Unit>,
+            With<PathfindingAgent>,
+            With<Available>,
+            Without<Selected>,
+        ),
+    >,
+    mut selected_units_query: Query<
+        &mut CurrentTask,
+        (
+            With<Unit>,
+            With<PathfindingAgent>,
+            With<Available>,
+            With<Selected>,
+        ),
+    >,
 ) {
     let mut counter = 0;
     for mut unit_current_task in unit_query.iter_mut() {
@@ -690,7 +708,7 @@ fn test_find_2_rocks_system(
 
 /// Test helper: assign a DeliverItems task that goes to the requester chest and drops 2 rocks
 fn test_deliver_2_rocks_system(
-    mut unit_query: Query<&mut CurrentTask, (With<Unit>, With<PathfindingAgent>)>,
+    mut unit_query: Query<&mut CurrentTask, (With<Unit>, With<PathfindingAgent>, With<Available>)>,
 ) {
     let mut counter = 0;
     for mut unit_current_task in unit_query.iter_mut() {
