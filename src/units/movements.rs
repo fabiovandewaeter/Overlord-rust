@@ -137,14 +137,14 @@ pub fn sync_transform_to_gridpos_system(
 ) {
     for (grid_pos, mut transform) in query.iter_mut() {
         let target_pos = rounded_tile_pos_to_world(*grid_pos);
-        // let current_pos = transform.translation.xy();
+        let current_pos = transform.translation.xy();
 
         // Interpolation linéaire simple
-        // let new_pos = current_pos.lerp(target_pos, time.delta_secs() * 10.0);
-        // transform.translation.x = new_pos.x;
-        // transform.translation.y = new_pos.y;
-        transform.translation.x = target_pos.x;
-        transform.translation.y = target_pos.y;
+        let new_pos = current_pos.lerp(target_pos, time.delta_secs() * 10.0);
+        transform.translation.x = new_pos.x;
+        transform.translation.y = new_pos.y;
+        // transform.translation.x = target_pos.x;
+        // transform.translation.y = target_pos.y;
     }
 }
 

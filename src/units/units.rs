@@ -21,12 +21,15 @@ pub struct UnitsPlugin;
 impl Plugin for UnitsPlugin {
     fn build(&self, app: &mut bevy::app::App) {
         app.add_systems(
+            Update,
+            sync_transform_to_gridpos_system.after(move_and_collide_units_system),
+        )
+        .add_systems(
             FixedUpdate,
             (
                 // test_units_control_system.before(move_and_collide_units_system),
                 move_and_collide_units_system,
                 player_control_system,
-                sync_transform_to_gridpos_system.after(move_and_collide_units_system),
                 update_sprite_facing_system.after(move_and_collide_units_system),
                 display_units_with_no_current_action_system
                     .run_if(on_timer(Duration::from_secs(5))),
